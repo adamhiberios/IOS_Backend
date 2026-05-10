@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+
+# Build
+dist/
+
+# Environment — NEVER commit real secrets
+.env
+!.env.example
+
+# TypeScript
+*.js.map
+*.d.ts
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Logs
+logs/
+*.log
+
+# Test coverage
+coverage/
