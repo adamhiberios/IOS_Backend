@@ -6,17 +6,19 @@ import {
   OneToMany,
   JoinColumn,
 } from 'typeorm';
-import { BaseEntity } from './base.entity';
+import { UuidEntity } from './base.entity';
 import { Certificate } from './certificate.entity';
 import { Lesson } from './lesson.entity';
 
 @Entity('learning_modules')
-export class LearningModule extends BaseEntity {
+export class LearningModule extends UuidEntity {
   @Index()
-  @Column({ type: 'int' })
-  certId: number;
+  @Column({ type: 'uuid' })
+  certId: string;
 
-  @ManyToOne(() => Certificate, (c) => c.learningModules, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Certificate, (c) => c.learningModules, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'cert_id' })
   certificate: Certificate;
 

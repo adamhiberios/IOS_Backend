@@ -1,10 +1,5 @@
-import {
-  Column,
-  Entity,
-  Index,
-  OneToMany,
-} from 'typeorm';
-import { BaseEntity } from './base.entity';
+import { Column, Entity, Index, OneToMany } from 'typeorm';
+import { UuidEntity } from './base.entity';
 import { LearningModule } from './learning-module.entity';
 import { Exam } from './exam.entity';
 import { StudentPurchase } from './student-purchase.entity';
@@ -12,7 +7,7 @@ import { IssuedCertificate } from './issued-certificate.entity';
 import { Transaction } from './transaction.entity';
 
 @Entity('certificates')
-export class Certificate extends BaseEntity {
+export class Certificate extends UuidEntity {
   @Column({ type: 'varchar', length: 255 })
   title: string;
 

@@ -6,16 +6,16 @@ import {
   OneToMany,
   JoinColumn,
 } from 'typeorm';
-import { BaseEntity } from './base.entity';
+import { UuidEntity } from './base.entity';
 import { LearningModule } from './learning-module.entity';
 import { LessonQuiz } from './lesson-quiz.entity';
 import { StudentProgress } from './student-progress.entity';
 
 @Entity('lessons')
-export class Lesson extends BaseEntity {
+export class Lesson extends UuidEntity {
   @Index()
-  @Column({ type: 'int' })
-  moduleId: number;
+  @Column({ type: 'uuid' })
+  moduleId: string;
 
   @ManyToOne(() => LearningModule, (m) => m.lessons, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'module_id' })

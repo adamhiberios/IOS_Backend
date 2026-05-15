@@ -1,0 +1,150 @@
+# =============================================================================
+# IOS LMS — Local Development Stack
+#
+# Usage:
+#   docker compose up              # start everything (API hot-reloads)
+#   docker compose up -d           # detached
+#   docker compose down            # stop and remove containers
+#   docker compose down -v         # also remove volumes (wipes DB!)
+#
+#   docker compose exec api npm test
+#   docker compose exec api npm run migration:run
+#   docker compose exec api npm run migration:revert
+#   docker compose exec postgres psql -U ios -d ios_lms
+#   docker compose logs -f api
+#
+# Service URLs (from host):
+#   API           http://localhost:3000
+#   Swagger       http://localhost:3000/api/docs
+#   Postgres      localhost:5432  (user: ios, pass: iospass, db: ios_lms)
+#   Redis         localhost:6379
+#   Adminer (DB)  http://localhost:8080
+# =============================================================================
+
+name: ios-lms
+
+services:
+  # ─── PostgreSQL 15 ────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: ios-lms-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ios}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-iospass}
+      POSTGRES_DB: ${POSTGRES_DB:-ios_lms}
+      # Faster fsync for dev. Production uses Managed Postgres (different settings).
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # init.sql runs once on first start to install required extensions
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ios} -d ${POSTGRES_DB:-ios_lms}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - ios-lms-net
+
+  # ─── Redis 7 ──────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: ios-lms-redis
+    restart: unless-stopped
+    command: redis-server /usr/local/etc/redis/redis.conf
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+      - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - ios-lms-net
+
+  # ─── NestJS API (hot-reload dev) ──────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: ios-lms-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${PORT:-3000}:3000"
+      - "${WS_PORT:-3001}:3001"
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      WS_PORT: 3001
+      # File watching across the Docker volume mount needs polling on Windows
+      # and macOS hosts. Linux can use native fsevents but polling is safe
+      # everywhere. CPU cost is minimal at 1s interval.
+      CHOKIDAR_USEPOLLING: "true"
+      CHOKIDAR_INTERVAL: "1000"
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:4000}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ios}:${POSTGRES_PASSWORD:-iospass}@postgres:5432/${POSTGRES_DB:-ios_lms}
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-development-only-jwt-access-secret-min-64-chars-replace-in-production}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-development-only-jwt-refresh-secret-different-from-access-secret-here}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-900}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-604800}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-sk_test_mock}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-whsec_mock}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-SG.mock}
+      DO_SPACES_ENDPOINT: ${DO_SPACES_ENDPOINT:-https://nyc3.digitaloceanspaces.com}
+      DO_SPACES_BUCKET: ${DO_SPACES_BUCKET:-ios-lms-assets}
+      DO_SPACES_KEY: ${DO_SPACES_KEY:-mock_key}
+      DO_SPACES_SECRET: ${DO_SPACES_SECRET:-mock_secret}
+      DEFAULT_LOCALE: ${DEFAULT_LOCALE:-en}
+      SUPPORTED_LOCALES: ${SUPPORTED_LOCALES:-en,tr,fr,es,ar,de}
+    volumes:
+      # Mount source for hot reload. node_modules stays in-container.
+      - ./src:/app/src
+      - ./test:/app/test
+      - ./tsconfig.json:/app/tsconfig.json
+      - ./tsconfig.build.json:/app/tsconfig.build.json
+      - ./nest-cli.json:/app/nest-cli.json
+      - ./package.json:/app/package.json
+      - ./package-lock.json:/app/package-lock.json
+    networks:
+      - ios-lms-net
+
+  # ─── Adminer (Postgres GUI) ───────────────────────────────────────────────
+  # Removable. Useful during dev to inspect tables. Login: server=postgres,
+  # user=ios, password=iospass, db=ios_lms.
+  adminer:
+    image: adminer:4.8.1
+    container_name: ios-lms-adminer
+    restart: unless-stopped
+    ports:
+      - "${ADMINER_PORT:-8080}:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    depends_on:
+      - postgres
+    networks:
+      - ios-lms-net
+
+# ─── Networks ───────────────────────────────────────────────────────────────
+networks:
+  ios-lms-net:
+    driver: bridge
+
+# ─── Volumes ────────────────────────────────────────────────────────────────
+# Named volumes survive `docker compose down` but are wiped by `down -v`.
+volumes:
+  postgres-data:
+  redis-data:

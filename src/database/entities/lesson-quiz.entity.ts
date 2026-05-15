@@ -6,14 +6,14 @@ import {
   OneToMany,
   JoinColumn,
 } from 'typeorm';
-import { BaseEntity } from './base.entity';
+import { UuidEntity } from './base.entity';
 import { Lesson } from './lesson.entity';
 
 @Entity('lesson_quizzes')
-export class LessonQuiz extends BaseEntity {
+export class LessonQuiz extends UuidEntity {
   @Index()
-  @Column({ type: 'int' })
-  lessonId: number;
+  @Column({ type: 'uuid' })
+  lessonId: string;
 
   @ManyToOne(() => Lesson, (l) => l.quizzes, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'lesson_id' })
@@ -30,10 +30,10 @@ export class LessonQuiz extends BaseEntity {
 }
 
 @Entity('quiz_questions')
-export class QuizQuestion extends BaseEntity {
+export class QuizQuestion extends UuidEntity {
   @Index()
-  @Column({ type: 'int' })
-  quizId: number;
+  @Column({ type: 'uuid' })
+  quizId: string;
 
   @ManyToOne(() => LessonQuiz, (q) => q.questions, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'quiz_id' })

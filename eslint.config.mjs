@@ -32,4 +32,22 @@ export default tseslint.config(
       "prettier/prettier": ["error", { endOfLine: "auto" }],
     },
   },
+  // Test files: relax type-aware rules that fight common Jest patterns
+  {
+    files: [
+      '**/*.spec.ts',
+      '**/*.test.ts',
+      '**/test-utils/**/*.ts',
+      'test/**/*.ts',
+    ],
+    rules: {
+      '@typescript-eslint/unbound-method': 'off',
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-call': 'off',
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+      '@typescript-eslint/no-unsafe-return': 'off',
+      '@typescript-eslint/no-unused-vars': 'warn',
+      '@typescript-eslint/no-require-imports': 'off',
+    },
+  },
 );

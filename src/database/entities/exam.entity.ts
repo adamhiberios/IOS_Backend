@@ -7,7 +7,7 @@ import {
   JoinColumn,
   Check,
 } from 'typeorm';
-import { BaseEntity } from './base.entity';
+import { UuidEntity } from './base.entity';
 import { Certificate } from './certificate.entity';
 import { ExamAccessCode } from './exam-access-code.entity';
 import { ExamAttempt } from './exam-attempt.entity';
@@ -23,15 +23,15 @@ export enum QuestionType {
   TRUE_FALSE = 'true_false',
 }
 
-// ─── Exam ────────────────────────────────────────────────────────────────────
+// ── Exam ─────────────────────────────────────────────────────────────────────
 
 @Entity('exams')
 @Check(`"exam_order" BETWEEN 1 AND 6`)
 @Check(`"passing_score" BETWEEN 1 AND 100`)
-export class Exam extends BaseEntity {
+export class Exam extends UuidEntity {
   @Index()
-  @Column({ type: 'int' })
-  certId: number;
+  @Column({ type: 'uuid' })
+  certId: string;
 
   @ManyToOne(() => Certificate, (c) => c.exams, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'cert_id' })
@@ -52,8 +52,8 @@ export class Exam extends BaseEntity {
   @Column({ type: 'int' })
   durationMinutes: number;
 
-  @Column({ type: 'int', nullable: true })
-  createdById: number | null;
+  @Column({ type: 'uuid', nullable: true })
+  createdById: string | null;
 
   @OneToMany(() => ExamQuestion, (q) => q.exam, { cascade: true })
   questions: ExamQuestion[];
@@ -68,13 +68,13 @@ export class Exam extends BaseEntity {
   testSessions: TestSession[];
 }
 
-// ─── ExamQuestion ─────────────────────────────────────────────────────────────
+// ── ExamQuestion ─────────────────────────────────────────────────────────────
 
 @Entity('exam_questions')
-export class ExamQuestion extends BaseEntity {
+export class ExamQuestion extends UuidEntity {
   @Index()
-  @Column({ type: 'int' })
-  examId: number;
+  @Column({ type: 'uuid' })
+  examId: string;
 
   @ManyToOne(() => Exam, (e) => e.questions, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'exam_id' })
@@ -96,13 +96,13 @@ export class ExamQuestion extends BaseEntity {
   options: ExamQuestionOption[];
 }
 
-// ─── ExamQuestionOption ───────────────────────────────────────────────────────
+// ── ExamQuestionOption ───────────────────────────────────────────────────────
 
 @Entity('exam_question_options')
-export class ExamQuestionOption extends BaseEntity {
+export class ExamQuestionOption extends UuidEntity {
   @Index()
-  @Column({ type: 'int' })
-  questionId: number;
+  @Column({ type: 'uuid' })
+  questionId: string;
 
   @ManyToOne(() => ExamQuestion, (q) => q.options, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'question_id' })

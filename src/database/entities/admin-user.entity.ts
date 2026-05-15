@@ -6,7 +6,7 @@ import {
   JoinColumn,
   OneToMany,
 } from 'typeorm';
-import { BaseEntity } from './base.entity';
+import { UuidEntity } from './base.entity';
 import { AdminAuditLog } from './admin-audit-log.entity';
 
 export enum AdminRole {
@@ -18,7 +18,7 @@ export enum AdminRole {
 }
 
 @Entity('admin_users')
-export class AdminUser extends BaseEntity {
+export class AdminUser extends UuidEntity {
   @Index({ unique: true })
   @Column({ type: 'varchar', length: 255 })
   email: string;
@@ -26,8 +26,11 @@ export class AdminUser extends BaseEntity {
   @Column({ type: 'varchar', length: 255 })
   passwordHash: string;
 
-  @Column({ type: 'varchar', length: 255 })
-  fullName: string;
+  @Column({ type: 'varchar', length: 100 })
+  firstName: string;
+
+  @Column({ type: 'varchar', length: 100 })
+  lastName: string;
 
   @Column({ type: 'enum', enum: AdminRole })
   role: AdminRole;
@@ -35,8 +38,8 @@ export class AdminUser extends BaseEntity {
   @Column({ type: 'boolean', default: true })
   active: boolean;
 
-  @Column({ type: 'int', nullable: true })
-  createdById: number | null;
+  @Column({ type: 'uuid', nullable: true })
+  createdById: string | null;
 
   @ManyToOne(() => AdminUser, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'created_by_id' })
@@ -44,4 +47,8 @@ export class AdminUser extends BaseEntity {
 
   @OneToMany(() => AdminAuditLog, (l) => l.actor)
   auditLogs: AdminAuditLog[];
+
+  get fullName(): string {
+    return `${this.firstName} ${this.lastName}`.trim();
+  }
 }

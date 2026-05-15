@@ -1,1 +1,4 @@
-export { Transaction, TransactionStatus } from './progress-cert-transaction.entity';
+export {
+  Transaction,
+  TransactionStatus,
+} from './progress-cert-transaction.entity';

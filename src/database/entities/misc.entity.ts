@@ -1,15 +1,9 @@
-import {
-  Column,
-  Entity,
-  Index,
-  ManyToOne,
-  JoinColumn,
-} from 'typeorm';
-import { BaseEntity } from './base.entity';
+import { Column, Entity, Index, ManyToOne, JoinColumn } from 'typeorm';
+import { UuidEntity, IntEntity } from './base.entity';
 import { AdminUser } from './admin-user.entity';
 import { User } from './user.entity';
 
-// ─── PromoCode ────────────────────────────────────────────────────────────────
+// ── PromoCode (UUID — user-facing) ───────────────────────────────────────────
 
 export enum DiscountType {
   PERCENTAGE = 'percentage',
@@ -17,7 +11,7 @@ export enum DiscountType {
 }
 
 @Entity('promo_codes')
-export class PromoCode extends BaseEntity {
+export class PromoCode extends UuidEntity {
   @Index({ unique: true })
   @Column({ type: 'varchar', length: 100 })
   code: string;
@@ -28,11 +22,9 @@ export class PromoCode extends BaseEntity {
   @Column({ type: 'numeric', precision: 5, scale: 2, nullable: true })
   discountValue: number | null;
 
-  /**
-   * NULL = applies to all certificates.
-   */
-  @Column({ type: 'int', array: true, nullable: true })
-  applicableCertIds: number[] | null;
+  /** NULL = applies to all certificates. */
+  @Column({ type: 'uuid', array: true, nullable: true })
+  applicableCertIds: string[] | null;
 
   @Column({ type: 'int', nullable: true })
   maxUses: number | null;
@@ -43,18 +35,18 @@ export class PromoCode extends BaseEntity {
   @Column({ type: 'timestamptz', nullable: true })
   expiresAt: Date | null;
 
-  @Column({ type: 'int', nullable: true })
-  createdById: number | null;
+  @Column({ type: 'uuid', nullable: true })
+  createdById: string | null;
 
   @ManyToOne(() => AdminUser, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'created_by_id' })
   createdBy: AdminUser | null;
 }
 
-// ─── ProcessedWebhook ─────────────────────────────────────────────────────────
+// ── ProcessedWebhook (internal — serial) ─────────────────────────────────────
 
 @Entity('processed_webhooks')
-export class ProcessedWebhook extends BaseEntity {
+export class ProcessedWebhook extends IntEntity {
   @Index({ unique: true })
   @Column({ type: 'varchar', length: 255 })
   eventId: string;
@@ -66,13 +58,13 @@ export class ProcessedWebhook extends BaseEntity {
   processedAt: Date;
 }
 
-// ─── AdminAuditLog ────────────────────────────────────────────────────────────
+// ── AdminAuditLog (internal — serial) ────────────────────────────────────────
 
 @Entity('admin_audit_logs')
-export class AdminAuditLog extends BaseEntity {
+export class AdminAuditLog extends IntEntity {
   @Index()
-  @Column({ type: 'int' })
-  actorId: number;
+  @Column({ type: 'uuid' })
+  actorId: string;
 
   @ManyToOne(() => AdminUser, (u) => u.auditLogs, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'actor_id' })
@@ -84,8 +76,12 @@ export class AdminAuditLog extends BaseEntity {
   @Column({ type: 'varchar', length: 100 })
   tableName: string;
 
-  @Column({ type: 'int', nullable: true })
-  recordId: number | null;
+  /**
+   * UUID of the affected row. Nullable to support multi-row operations
+   * and tables with non-UUID PKs.
+   */
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  recordId: string | null;
 
   @Column({ type: 'jsonb', nullable: true })
   oldData: Record<string, unknown> | null;
@@ -97,10 +93,10 @@ export class AdminAuditLog extends BaseEntity {
   ipAddress: string | null;
 }
 
-// ─── NotificationTemplate ─────────────────────────────────────────────────────
+// ── NotificationTemplate (internal — serial) ─────────────────────────────────
 
 @Entity('notification_templates')
-export class NotificationTemplate extends BaseEntity {
+export class NotificationTemplate extends IntEntity {
   @Column({ type: 'varchar', length: 100 })
   type: string;
 
@@ -117,7 +113,7 @@ export class NotificationTemplate extends BaseEntity {
   textBody: string;
 }
 
-// ─── NotificationQueue ────────────────────────────────────────────────────────
+// ── NotificationQueue (internal — serial) ────────────────────────────────────
 
 export enum NotificationStatus {
   PENDING = 'pending',
@@ -126,10 +122,10 @@ export enum NotificationStatus {
 }
 
 @Entity('notification_queue')
-export class NotificationQueue extends BaseEntity {
+export class NotificationQueue extends IntEntity {
   @Index()
-  @Column({ type: 'int' })
-  userId: number;
+  @Column({ type: 'uuid' })
+  userId: string;
 
   @ManyToOne(() => User, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'user_id' })
@@ -141,7 +137,11 @@ export class NotificationQueue extends BaseEntity {
   @Column({ type: 'jsonb' })
   payload: Record<string, unknown>;
 
-  @Column({ type: 'enum', enum: NotificationStatus, default: NotificationStatus.PENDING })
+  @Column({
+    type: 'enum',
+    enum: NotificationStatus,
+    default: NotificationStatus.PENDING,
+  })
   status: NotificationStatus;
 
   @Column({ type: 'timestamptz', nullable: true })

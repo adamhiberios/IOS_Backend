@@ -1,15 +1,9 @@
-import {
-  Column,
-  Entity,
-  Index,
-  ManyToOne,
-  JoinColumn,
-} from 'typeorm';
-import { BaseEntity } from './base.entity';
+import { Column, Entity, Index, ManyToOne, JoinColumn } from 'typeorm';
+import { UuidEntity, IntEntity } from './base.entity';
 import { User } from './user.entity';
 import { AdminUser } from './admin-user.entity';
 
-// ─── RefreshToken ─────────────────────────────────────────────────────────────
+// ── RefreshToken (internal — serial) ─────────────────────────────────────────
 
 export enum TokenOwnerType {
   USER = 'user',
@@ -17,18 +11,21 @@ export enum TokenOwnerType {
 }
 
 @Entity('refresh_tokens')
-export class RefreshToken extends BaseEntity {
+export class RefreshToken extends IntEntity {
   @Index()
-  @Column({ type: 'int', nullable: true })
-  userId: number | null;
+  @Column({ type: 'uuid', nullable: true })
+  userId: string | null;
 
-  @ManyToOne(() => User, (u) => u.refreshTokens, { nullable: true, onDelete: 'CASCADE' })
+  @ManyToOne(() => User, (u) => u.refreshTokens, {
+    nullable: true,
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'user_id' })
   user: User | null;
 
   @Index()
-  @Column({ type: 'int', nullable: true })
-  adminId: number | null;
+  @Column({ type: 'uuid', nullable: true })
+  adminId: string | null;
 
   @ManyToOne(() => AdminUser, { nullable: true, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'admin_id' })
@@ -37,9 +34,7 @@ export class RefreshToken extends BaseEntity {
   @Column({ type: 'enum', enum: TokenOwnerType })
   ownerType: TokenOwnerType;
 
-  /**
-   * bcrypt hash of the refresh token. Plain token is never stored.
-   */
+  /** bcrypt hash of the refresh token. Plain token is never stored. */
   @Column({ type: 'varchar', length: 255 })
   tokenHash: string;
 
@@ -50,10 +45,10 @@ export class RefreshToken extends BaseEntity {
   revokedAt: Date | null;
 }
 
-// ─── RateLimitBlock ───────────────────────────────────────────────────────────
+// ── RateLimitBlock (internal — serial) ───────────────────────────────────────
 
 @Entity('rate_limit_blocks')
-export class RateLimitBlock extends BaseEntity {
+export class RateLimitBlock extends IntEntity {
   @Index()
   @Column({ type: 'inet' })
   ipAddress: string;
@@ -65,7 +60,7 @@ export class RateLimitBlock extends BaseEntity {
   blockedUntil: Date;
 }
 
-// ─── BlogArticle ──────────────────────────────────────────────────────────────
+// ── BlogArticle (UUID — user-facing) ─────────────────────────────────────────
 
 export enum BlogStatus {
   DRAFT = 'draft',
@@ -74,7 +69,7 @@ export enum BlogStatus {
 }
 
 @Entity('blog_articles')
-export class BlogArticle extends BaseEntity {
+export class BlogArticle extends UuidEntity {
   @Column({ type: 'varchar', length: 255 })
   title: string;
 
@@ -88,8 +83,8 @@ export class BlogArticle extends BaseEntity {
   @Column({ type: 'enum', enum: BlogStatus, default: BlogStatus.DRAFT })
   status: BlogStatus;
 
-  @Column({ type: 'int', nullable: true })
-  authorId: number | null;
+  @Column({ type: 'uuid', nullable: true })
+  authorId: string | null;
 
   @ManyToOne(() => AdminUser, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'author_id' })

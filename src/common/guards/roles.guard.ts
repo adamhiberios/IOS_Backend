@@ -13,11 +13,11 @@ import { ROLES_KEY } from '../decorators/roles.decorator';
  * A role can perform any action at its level or below.
  */
 const ROLE_HIERARCHY: Record<AdminRole, number> = {
-  [AdminRole.SUPER_ADMIN]:    5,
+  [AdminRole.SUPER_ADMIN]: 5,
   [AdminRole.LEARNING_ADMIN]: 4,
   [AdminRole.CONTENT_CREATOR]: 2,
-  [AdminRole.FINANCE_ADMIN]:  2,
-  [AdminRole.SUPPORT_ADMIN]:  1,
+  [AdminRole.FINANCE_ADMIN]: 2,
+  [AdminRole.SUPPORT_ADMIN]: 1,
 };
 
 @Injectable()
@@ -25,10 +25,10 @@ export class RolesGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const requiredRoles = this.reflector.getAllAndOverride<AdminRole[]>(ROLES_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
+    const requiredRoles = this.reflector.getAllAndOverride<AdminRole[]>(
+      ROLES_KEY,
+      [context.getHandler(), context.getClass()],
+    );
 
     // If no @Roles() decorator is present, route is publicly guarded by JwtAuthGuard only
     if (!requiredRoles || requiredRoles.length === 0) {

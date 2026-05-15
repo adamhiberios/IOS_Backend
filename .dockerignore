@@ -1,0 +1,44 @@
+# Dependencies — always rebuilt inside the image
+node_modules
+npm-debug.log*
+
+# Build artefacts
+dist
+coverage
+*.tsbuildinfo
+
+# Environment files — never bake secrets into images
+.env
+.env.local
+.env.*.local
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# IDE / OS
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+*.swp
+
+# Logs
+logs
+*.log
+
+# Test artefacts
+.nyc_output
+test-results
+
+# Docker files don't need to be in the build context
+Dockerfile
+Dockerfile.dev
+docker-compose*.yml
+.dockerignore
+
+# Docs
+README.md
+IOS_LMS_Backend_TaskTracker.md
+*.md

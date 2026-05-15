@@ -1,16 +1,20 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { EventEmitterModule } from '@nestjs/event-emitter';
-import { APP_FILTER, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 
 import { validationSchema } from './config/validation';
 import { typeormConfig } from './database/config/typeorm.config';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { RlsInterceptor } from './common/interceptors/rls.interceptor';
+
 import { HealthModule } from './modules/health/health.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { SeederModule } from './modules/seeder/seeder.module';
+import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 
 @Module({
   imports: [
@@ -23,8 +27,19 @@ import { HealthModule } from './modules/health/health.module';
       useFactory: typeormConfig,
     }),
     ThrottlerModule.forRoot([
-      { name: 'default', ttl: 60_000, limit: 100 },
-      { name: 'auth',    ttl: 60_000, limit: 5 },
+      {
+        name: 'default',
+        ttl: 60_000,
+        // In test env we set this very high so individual tests don't trip
+        // the limiter as a side-effect. The throttler-specific integration
+        // test re-asserts the real behaviour by overriding the limit locally.
+        limit: process.env.NODE_ENV === 'test' ? 100_000 : 100,
+      },
+      {
+        name: 'auth',
+        ttl: 60_000,
+        limit: process.env.NODE_ENV === 'test' ? 100_000 : 5,
+      },
     ]),
     EventEmitterModule.forRoot({
       wildcard: true,
@@ -33,20 +48,35 @@ import { HealthModule } from './modules/health/health.module';
       verboseMemoryLeak: true,
       ignoreErrors: false,
     }),
+
+    // Feature modules
     HealthModule,
+    AuthModule,
+    SeederModule,
   ],
   providers: [
-    { provide: APP_FILTER,       useClass: GlobalExceptionFilter },
+    // Global error handler (RFC 7807)
+    { provide: APP_FILTER, useClass: GlobalExceptionFilter },
+
+    // Global validation pipe — applies to every DTO automatically
     {
       provide: APP_PIPE,
-      useFactory: () => new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: { enableImplicitConversion: true },
-      }),
+      useFactory: () =>
+        new ValidationPipe({
+          whitelist: true,
+          forbidNonWhitelisted: true,
+          transform: true,
+          transformOptions: { enableImplicitConversion: true },
+        }),
     },
-    { provide: APP_INTERCEPTOR,  useClass: RlsInterceptor },
+
+    // GLOBAL GUARDS — order matters: throttler first (cheaper), then JWT.
+    // Routes opt out of JWT via @Public(). Throttler runs on every request.
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+
+    // RLS interceptor — only sets session-local vars when req.user is present
+    { provide: APP_INTERCEPTOR, useClass: RlsInterceptor },
   ],
 })
 export class AppModule {}

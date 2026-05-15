@@ -1,11 +1,17 @@
-export { BaseEntity } from './base.entity';
+export { BaseEntity, UuidEntity, IntEntity } from './base.entity';
 export { User } from './user.entity';
 export { AdminUser, AdminRole } from './admin-user.entity';
 export { Certificate } from './certificate.entity';
 export { LearningModule } from './learning-module.entity';
 export { Lesson } from './lesson.entity';
 export { LessonQuiz, QuizQuestion } from './lesson-quiz.entity';
-export { Exam, ExamQuestion, ExamQuestionOption, ExamStatus, QuestionType } from './exam.entity';
+export {
+  Exam,
+  ExamQuestion,
+  ExamQuestionOption,
+  ExamStatus,
+  QuestionType,
+} from './exam.entity';
 export { ExamAccessCode } from './exam-access-code.entity';
 export { ExamAttempt, AttemptStatus } from './exam-attempt.entity';
 export { TestSession, TestSessionStatus } from './test-session.entity';
@@ -32,3 +38,4 @@ export {
   BlogArticle,
   BlogStatus,
 } from './auth-misc.entity';
+export { AuthToken, AuthTokenPurpose } from './auth-token.entity';

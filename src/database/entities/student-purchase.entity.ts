@@ -1,12 +1,5 @@
-import {
-  Column,
-  Entity,
-  Index,
-  ManyToOne,
-  JoinColumn,
-  Unique,
-} from 'typeorm';
-import { BaseEntity } from './base.entity';
+import { Column, Entity, Index, ManyToOne, JoinColumn, Unique } from 'typeorm';
+import { UuidEntity } from './base.entity';
 import { User } from './user.entity';
 import { Certificate } from './certificate.entity';
 
@@ -17,18 +10,18 @@ export enum PaymentType {
 
 @Entity('student_purchases')
 @Unique(['userId', 'certId'])
-export class StudentPurchase extends BaseEntity {
+export class StudentPurchase extends UuidEntity {
   @Index()
-  @Column({ type: 'int' })
-  userId: number;
+  @Column({ type: 'uuid' })
+  userId: string;
 
   @ManyToOne(() => User, (u) => u.purchases, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'user_id' })
   user: User;
 
   @Index()
-  @Column({ type: 'int' })
-  certId: number;
+  @Column({ type: 'uuid' })
+  certId: string;
 
   @ManyToOne(() => Certificate, (c) => c.purchases, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'cert_id' })
@@ -40,15 +33,9 @@ export class StudentPurchase extends BaseEntity {
   @Column({ type: 'enum', enum: PaymentType, default: PaymentType.ENROLLMENT })
   paymentType: PaymentType;
 
-  /**
-   * Student has confirmed readiness before exam assignment.
-   */
   @Column({ type: 'boolean', default: false })
   preExamConfirmed: boolean;
 
-  /**
-   * Set to true when student passes an exam for this cert.
-   */
   @Column({ type: 'boolean', default: false })
   examCompleted: boolean;
 }

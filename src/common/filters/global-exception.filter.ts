@@ -6,7 +6,7 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 
 /**
  * Catches all HTTP exceptions and formats them as RFC 7807 Problem Details.
@@ -23,7 +23,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     let status: number;
     let message: string;
-    let errors: unknown | undefined;
+    let errors: unknown;
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();

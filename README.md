@@ -1,98 +1,112 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# IOS LMS — Backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Backend for the Institute of Scrum Learning Management System.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+**Stack:** NestJS · PostgreSQL 15 · TypeORM · Redis 7 · Angular Universal (frontend, separate)
 
-## Description
+**Auth:** JWT access (15 min) + refresh rotation in HttpOnly cookie (7d). 5-tier RBAC.
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+**Exam engine:** Redis TTL as canonical clock, WebSocket gateway for real-time updates, auto-submit on expiry (Week 4).
 
-## Project setup
+---
+
+## Quick start — Docker (recommended)
 
 ```bash
-$ npm install
+# 1. Copy the env template
+cp .env.docker.example .env
+
+# 2. Start everything (Postgres + Redis + API + Adminer)
+docker compose up
+
+# 3. In another terminal, run migrations the first time
+docker compose exec api npm run migration:run
 ```
 
-## Compile and run the project
+URLs:
+- API — http://localhost:3000
+- Swagger — http://localhost:3000/api/docs
+- Adminer (DB GUI) — http://localhost:8080
+- Postgres — `localhost:5432` (user: `ios`, pass: `iospass`, db: `ios_lms`)
+- Redis — `localhost:6379`
+
+Common commands (also available as `npm run docker:*` shortcuts):
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+docker compose up -d                      # detached
+docker compose down                        # stop containers (data preserved)
+docker compose down -v                     # nuke volumes (wipes DB)
+docker compose logs -f api                 # tail API logs
+docker compose exec api npm test           # run tests inside the container
+docker compose exec api npm run migration:run
+docker compose exec postgres psql -U ios -d ios_lms
+docker compose exec redis redis-cli
 ```
 
-## Run tests
+---
+
+## Quick start — bare metal (no Docker)
+
+Requires Node 20.x, Postgres 15, Redis 7 running locally.
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+npm install
+cp .env.example .env
+# Edit .env with your local DB / Redis URLs
+npm run migration:run
+npm run start:dev
 ```
 
-## Deployment
+---
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+## Project structure
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+```
+src/
+├── app.module.ts            # Root module — wires global guards + filters
+├── main.ts                  # Bootstrap — Helmet, cookies, Swagger, CORS
+├── common/                  # Cross-cutting concerns
+│   ├── decorators/          # @Roles()
+│   ├── filters/             # RFC 7807 global exception filter
+│   ├── guards/              # RolesGuard (5-tier RBAC)
+│   └── interceptors/        # RlsInterceptor (sets app.current_user_id)
+├── config/                  # Joi env validation
+├── database/
+│   ├── config/              # TypeORM config + SnakeNamingStrategy
+│   ├── entities/            # 25 entities + barrel index
+│   └── migrations/          # Numbered TypeORM migrations
+├── modules/
+│   ├── auth/                # JWT auth + RBAC (Week 2 ✓)
+│   ├── health/              # /health endpoints
+│   └── mail/                # Stub MailService (replaced by NotificationModule in Week 7)
+└── test-utils/              # Shared test helpers
+```
+
+Tests live next to their source (`*.spec.ts`).
+
+---
+
+## Testing
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+npm test              # all unit tests
+npm run test:cov      # with coverage report (gates: 80/75/80/80)
+npm run test:watch    # watch mode
+npm run lint          # eslint with autofix
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+Current status: **85 tests, 97.59% statement coverage.** New code must ship with tests in the same commit.
 
-## Resources
+---
 
-Check out a few resources that may come in handy when working with NestJS:
+## Production deployment
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+For self-hosted (single DigitalOcean Droplet):
 
-## Support
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+For managed services (DO Managed Postgres + Managed Caching/Valkey), drop the `postgres` and `redis` services and point `DATABASE_URL` / `REDIS_URL` at the managed instances.
 
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+See `IOS_LMS_Backend_TaskTracker.md` for the full project plan.

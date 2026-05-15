@@ -1,12 +1,5 @@
-import {
-  Column,
-  Entity,
-  Index,
-  ManyToOne,
-  JoinColumn,
-  Check,
-} from 'typeorm';
-import { BaseEntity } from './base.entity';
+import { Column, Entity, Index, ManyToOne, JoinColumn, Check } from 'typeorm';
+import { UuidEntity } from './base.entity';
 import { User } from './user.entity';
 import { Exam } from './exam.entity';
 import { Certificate } from './certificate.entity';
@@ -18,25 +11,25 @@ export enum AttemptStatus {
 
 @Entity('exam_attempts')
 @Check(`"score" BETWEEN 0 AND 100`)
-export class ExamAttempt extends BaseEntity {
+export class ExamAttempt extends UuidEntity {
   @Index()
-  @Column({ type: 'int' })
-  userId: number;
+  @Column({ type: 'uuid' })
+  userId: string;
 
   @ManyToOne(() => User, (u) => u.examAttempts, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'user_id' })
   user: User;
 
   @Index()
-  @Column({ type: 'int' })
-  examId: number;
+  @Column({ type: 'uuid' })
+  examId: string;
 
   @ManyToOne(() => Exam, (e) => e.attempts, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'exam_id' })
   exam: Exam;
 
-  @Column({ type: 'int' })
-  certId: number;
+  @Column({ type: 'uuid' })
+  certId: string;
 
   @ManyToOne(() => Certificate, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'cert_id' })
@@ -53,7 +46,7 @@ export class ExamAttempt extends BaseEntity {
    * Immutable once written.
    */
   @Column({ type: 'jsonb' })
-  answers: Record<string, number>;
+  answers: Record<string, string>;
 
   @Column({ type: 'int', nullable: true })
   durationSeconds: number | null;
@@ -64,12 +57,13 @@ export class ExamAttempt extends BaseEntity {
   @Column({ type: 'timestamptz' })
   submittedAt: Date;
 
-  @Column({ type: 'enum', enum: AttemptStatus, default: AttemptStatus.SUBMITTED })
+  @Column({
+    type: 'enum',
+    enum: AttemptStatus,
+    default: AttemptStatus.SUBMITTED,
+  })
   status: AttemptStatus;
 
-  /**
-   * True when submission arrived within the 2-minute grace window after Redis expiry.
-   */
   @Column({ type: 'boolean', default: false })
   lateFlag: boolean;
 }
