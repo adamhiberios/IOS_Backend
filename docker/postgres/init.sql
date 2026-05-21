@@ -13,3 +13,10 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 -- Optional: btree_gin for any future composite indexes we may want.
 -- Free to enable — costs nothing if unused.
 CREATE EXTENSION IF NOT EXISTS btree_gin;
+
+-- pg_trgm powers the GIN trigram indexes on translated titles (i18n catalog
+-- search). Installed here so it's pre-created by the postgres superuser at
+-- first container start — extensions that register operator classes used by
+-- indexes cannot be cleanly REASSIGN'd later, so we must avoid letting a
+-- non-superuser run their first CREATE EXTENSION pg_trgm.
+CREATE EXTENSION IF NOT EXISTS pg_trgm;

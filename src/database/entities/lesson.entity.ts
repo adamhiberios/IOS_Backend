@@ -10,6 +10,7 @@ import { UuidEntity } from './base.entity';
 import { LearningModule } from './learning-module.entity';
 import { LessonQuiz } from './lesson-quiz.entity';
 import { StudentProgress } from './student-progress.entity';
+import type { Translations } from '../../common/i18n/types';
 
 @Entity('lessons')
 export class Lesson extends UuidEntity {
@@ -29,6 +30,13 @@ export class Lesson extends UuidEntity {
 
   @Column({ type: 'text', nullable: true })
   contentText: string | null;
+
+  /** Per-locale title and rich-text body. See Certificate.translations for shape. */
+  @Column({
+    type: 'jsonb',
+    default: () => `'{}'::jsonb`,
+  })
+  translations: Translations<'title' | 'content_html'>;
 
   @Column({ type: 'int', default: 0 })
   position: number;

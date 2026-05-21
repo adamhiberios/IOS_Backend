@@ -1,0 +1,74 @@
+{
+  "validation": {
+    "failed": {
+      "title": "Validation failed",
+      "detail": "One or more fields in your request are invalid. See the errors array for details."
+    },
+    "invalid_locale": {
+      "title": "Unsupported locale",
+      "detail": "The locale '{requested}' is not supported. Supported locales: en, tr, fr, es, ar, de."
+    }
+  },
+  "auth": {
+    "invalid_credentials": {
+      "title": "Invalid credentials",
+      "detail": "The email or password you entered does not match an active account."
+    },
+    "jwt_expired": {
+      "title": "Session expired",
+      "detail": "Your session has expired. Please refresh your token and try again."
+    },
+    "jwt_invalid": {
+      "title": "Invalid token",
+      "detail": "Your authentication token is invalid or malformed. Please sign in again."
+    },
+    "refresh_token_reused": {
+      "title": "Session security alert",
+      "detail": "A reused refresh token was detected. All sessions for this account have been revoked. Please sign in again."
+    },
+    "refresh_token_invalid": {
+      "title": "Refresh token invalid",
+      "detail": "Your refresh token is missing, expired, or revoked. Please sign in again."
+    },
+    "email_not_verified": {
+      "title": "Email not verified",
+      "detail": "Please verify your email address before signing in. We can resend the verification email if you need it."
+    },
+    "account_disabled": {
+      "title": "Account disabled",
+      "detail": "This account has been disabled. Contact support if you believe this is an error."
+    },
+    "insufficient_role": {
+      "title": "Insufficient permissions",
+      "detail": "This action requires one of the following roles: {required}."
+    },
+    "ownership_violation": {
+      "title": "Forbidden",
+      "detail": "You do not have permission to access this {resource}."
+    }
+  },
+  "domain": {
+    "resource_not_found": {
+      "title": "Not found",
+      "detail": "The requested {resource} could not be found."
+    },
+    "resource_already_exists": {
+      "title": "Conflict",
+      "detail": "A {resource} with the supplied details already exists."
+    },
+    "email_already_registered": {
+      "title": "Email already registered",
+      "detail": "An account with that email address already exists."
+    }
+  },
+  "infrastructure": {
+    "rate_limited": {
+      "title": "Too many requests",
+      "detail": "You have made too many requests. Try again in {retryAfterSeconds} seconds."
+    },
+    "internal": {
+      "title": "Something went wrong",
+      "detail": "An unexpected error occurred. Please try again. If the problem persists, contact support with the request ID shown in this response."
+    }
+  }
+}

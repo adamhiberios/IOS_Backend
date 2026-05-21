@@ -1,0 +1,15 @@
+{
+  "_note": "Email body translations land in Week 7 as part of the NotificationModule. This file is a placeholder so the namespace exists and tests can assert its loadability.",
+  "welcome": {
+    "subject": "Welcome to the Institute of Scrum",
+    "preheader": "Your account is ready — verify your email to get started."
+  },
+  "verify_email": {
+    "subject": "Verify your email address",
+    "preheader": "Tap the link to confirm your email."
+  },
+  "password_reset": {
+    "subject": "Reset your password",
+    "preheader": "We received a request to reset your password."
+  }
+}

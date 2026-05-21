@@ -13,5 +13,10 @@
   "maxWorkers": 1,
   "verbose": true,
   "forceExit": true,
-  "collectCoverage": false
+  "collectCoverage": false,
+  "reporters": [
+  "default",
+  ["jest-junit", { "outputDirectory": "./coverage", "outputName": "integration-junit.xml" }],
+  ["jest-html-reporter", { "outputPath": "./coverage/integration-report.html", "pageTitle": "IOS LMS Integration" }]
+]
 }

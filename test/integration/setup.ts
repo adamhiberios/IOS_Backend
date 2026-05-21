@@ -83,10 +83,20 @@ export default async function globalSetup(): Promise<void> {
   });
   await migrationDs.initialize();
 
-  // pgcrypto is required for gen_random_uuid(). The migration itself does
-  // CREATE EXTENSION IF NOT EXISTS pgcrypto as its very first step, so this
-  // is belt-and-braces.
+  // Pre-install every extension the migrations rely on. This runs as the
+  // admin role (which is the cluster superuser in the docker setup), which
+  // matters because:
+  //
+  //   * pgcrypto provides gen_random_uuid() used by test_sessions.
+  //   * pg_trgm provides the gin_trgm_ops operator class consumed by the
+  //     i18n catalog-search GIN indexes (migration 1748000000000). Letting
+  //     CREATE EXTENSION pg_trgm fall to the migration would still work, but
+  //     once the migration creates an index that references the operator
+  //     class, a later REASSIGN OWNED on the installer cannot move the
+  //     extension catalog entries and fails with "objects required by the
+  //     database system". Installing it here, idempotently, sidesteps that.
   await migrationDs.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto`);
+  await migrationDs.query(`CREATE EXTENSION IF NOT EXISTS pg_trgm`);
 
   const ran = await migrationDs.runMigrations();
 
@@ -94,8 +104,62 @@ export default async function globalSetup(): Promise<void> {
   // After this point, ios_lms_app can TRUNCATE, RESTART IDENTITY, etc. on
   // every table without superuser privileges. RLS still applies because the
   // role is NOSUPERUSER NOBYPASSRLS and policies use FORCE.
-  await migrationDs.query(`REASSIGN OWNED BY CURRENT_USER TO ${appRole}`);
+  //
+  // We deliberately AVOID the blanket `REASSIGN OWNED BY` form here. That
+  // command walks every object the current user owns — including extension
+  // catalog entries — and Postgres refuses to move catalog objects that are
+  // "required by the database system" (pg_trgm's operator classes are pinned
+  // as soon as a GIN index references them). Instead we enumerate exactly
+  // what the test runner needs to truncate / mutate: public-schema tables,
+  // sequences, and functions. This is robust against any future extension
+  // we add to migrations.
+  await migrationDs.query(`
+    DO $do$
+    DECLARE
+      r record;
+      target text := '${appRole}';
+    BEGIN
+      FOR r IN
+        SELECT schemaname, tablename
+        FROM pg_tables
+        WHERE schemaname = 'public'
+      LOOP
+        EXECUTE format('ALTER TABLE %I.%I OWNER TO %I',
+                       r.schemaname, r.tablename, target);
+      END LOOP;
+
+      FOR r IN
+        SELECT schemaname, sequencename
+        FROM pg_sequences
+        WHERE schemaname = 'public'
+      LOOP
+        EXECUTE format('ALTER SEQUENCE %I.%I OWNER TO %I',
+                       r.schemaname, r.sequencename, target);
+      END LOOP;
+
+      FOR r IN
+        SELECT n.nspname AS schemaname,
+               p.oid::regprocedure::text AS funcsig
+        FROM pg_proc p
+        JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'public'
+      LOOP
+        EXECUTE format('ALTER FUNCTION %s OWNER TO %I',
+                       r.funcsig, target);
+      END LOOP;
+    END
+    $do$;
+  `);
   await migrationDs.query(`GRANT USAGE ON SCHEMA public TO ${appRole}`);
+  await migrationDs.query(
+    `GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON ALL TABLES IN SCHEMA public TO ${appRole}`,
+  );
+  await migrationDs.query(
+    `GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO ${appRole}`,
+  );
+  await migrationDs.query(
+    `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO ${appRole}`,
+  );
 
   await migrationDs.destroy();
   console.log(

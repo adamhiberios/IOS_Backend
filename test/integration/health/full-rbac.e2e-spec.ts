@@ -99,12 +99,19 @@ describe('[integration] health/full rbac', () => {
 
     const body = res.body as {
       status: string;
-      services: { database: string };
+      services: {
+        database: string;
+        storage?: { status: string; buckets: Record<string, boolean> };
+      };
       version: string;
       uptime: number;
       timestamp: string;
     };
-    expect(body.status).toBe('ok');
+    // Database is the only critical service for the suite's purposes — it
+    // must be 'ok'. Storage (added Week 3) hits MinIO; if MinIO isn't running
+    // in the test stack, storage reports degraded and so does the overall
+    // status. Both are valid runtime states, so we accept either.
+    expect(['ok', 'degraded']).toContain(body.status);
     expect(body.services).toBeDefined();
     expect(body.services.database).toBe('ok');
     expect(typeof body.uptime).toBe('number');

@@ -480,6 +480,57 @@ export class AuthService {
     );
   }
 
+  // ── Authenticated password change ────────────────────────────────────────
+
+  /**
+   * Authenticated password change.
+   *
+   * Flow mirrors `resetPassword` but the gate is `currentPassword` rather than
+   * a reset token: we look up the user, bcrypt-compare the supplied current
+   * password against the stored hash, then (only on match) hash the new
+   * password at cost-12 and write it. Like `resetPassword`, this revokes
+   * every active refresh token for the user so existing sessions on other
+   * devices are forced to re-login. The caller's own session will also be
+   * invalidated — the frontend should expect the next /auth/refresh to fail
+   * and redirect to login.
+   *
+   * Rejects on:
+   *   - user not found / inactive (treated as wrong credentials, same error)
+   *   - current password mismatch
+   *   - newPassword identical to currentPassword (avoids no-op churn)
+   */
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<{ message: string }> {
+    if (currentPassword === newPassword) {
+      throw new BadRequestException(
+        'New password must be different from current password',
+      );
+    }
+
+    const user = await this.users.findOne({ where: { id: userId } });
+    if (!user || !user.active) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const ok = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!ok) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, BCRYPT_PASSWORD_COST);
+    await this.users.update({ id: userId }, { passwordHash });
+
+    await this.revokeAllRefreshTokens(userId, 'student');
+
+    return {
+      message:
+        'Password changed. All active sessions have been signed out — please log in again.',
+    };
+  }
+
   // ── Public helper for other modules (Week 7) ─────────────────────────────
 
   async hashPassword(plain: string): Promise<string> {

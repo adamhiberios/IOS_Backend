@@ -15,6 +15,11 @@ import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { SeederModule } from './modules/seeder/seeder.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
+import { AppI18nModule } from './i18n/i18n.module';
+import { StorageModule } from './modules/storage/storage.module';
+import { ProfileModule } from './modules/profile/profile.module';
+import { CatalogModule } from './modules/catalog/catalog.module';
+import { LearningModule } from './modules/learning/learning.module';
 
 @Module({
   imports: [
@@ -49,10 +54,20 @@ import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
       ignoreErrors: false,
     }),
 
+    // i18n must load before feature modules so injected I18nService is ready
+    AppI18nModule,
+
+    // StorageModule is @Global() — exposes StorageService to every feature
+    // module without per-module import boilerplate.
+    StorageModule,
+
     // Feature modules
     HealthModule,
     AuthModule,
     SeederModule,
+    ProfileModule,
+    CatalogModule,
+    LearningModule,
   ],
   providers: [
     // Global error handler (RFC 7807)
