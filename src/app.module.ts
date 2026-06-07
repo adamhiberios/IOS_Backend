@@ -20,6 +20,8 @@ import { StorageModule } from './modules/storage/storage.module';
 import { ProfileModule } from './modules/profile/profile.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { LearningModule } from './modules/learning/learning.module';
+import { RedisModule } from './modules/redis/redis.module';
+import { ExamModule } from './modules/exam/exam.module';
 
 @Module({
   imports: [
@@ -61,6 +63,10 @@ import { LearningModule } from './modules/learning/learning.module';
     // module without per-module import boilerplate.
     StorageModule,
 
+    // RedisModule is @Global() — exposes RedisService and REDIS_CLIENT/SUBSCRIBER
+    // tokens to every feature module (exam engine, future queuing, etc.).
+    RedisModule,
+
     // Feature modules
     HealthModule,
     AuthModule,
@@ -68,6 +74,7 @@ import { LearningModule } from './modules/learning/learning.module';
     ProfileModule,
     CatalogModule,
     LearningModule,
+    ExamModule,
   ],
   providers: [
     // Global error handler (RFC 7807)

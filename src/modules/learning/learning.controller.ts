@@ -17,7 +17,7 @@ import {
 } from '@nestjs/swagger';
 
 import { CurrentUser } from '../auth/decorators';
-import {
+import type {
   AuthenticatedUser,
   RlsRequest,
 } from '../../common/interceptors/rls.interceptor';

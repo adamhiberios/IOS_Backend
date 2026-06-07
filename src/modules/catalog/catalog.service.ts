@@ -216,12 +216,12 @@ export class CatalogService {
         dtoTranslations: dto.translations,
         canonicalTitle: dto.title ?? cert.title,
         canonicalDescription:
-          dto.description !== undefined ? dto.description : cert.description,
+          (dto.description !== undefined ? dto.description : cert.description) ?? null,
       });
     }
 
     if (Object.keys(patch).length > 0) {
-      await this.certificates.update({ id }, patch);
+      await this.certificates.update({ id }, patch as any);
     }
     const refreshed = await this.certificates.findOneOrFail({ where: { id } });
     return this.toDetailDto(refreshed, this.resolveLocale(), true);
@@ -256,10 +256,10 @@ export class CatalogService {
       // Admin chose to override canonical via translations — accept it.
       await this.certificates.update(
         { id },
-        { title: merged.en.title, translations: merged },
+        { title: merged.en.title, translations: merged } as any,
       );
     } else {
-      await this.certificates.update({ id }, { translations: merged });
+      await this.certificates.update({ id }, { translations: merged } as any);
     }
 
     const refreshed = await this.certificates.findOneOrFail({ where: { id } });
@@ -299,10 +299,10 @@ export class CatalogService {
       id: c.id,
       programCode: c.programCode,
       title: titleRes.value ?? c.title,
-      description: descRes.value ?? c.description,
+      description: (descRes.value ?? c.description) ?? null,
       price: this.formatPrice(c.price),
       currency: c.currency,
-      thumbnailUrl: c.thumbnailUrl,
+      thumbnailUrl: c.thumbnailUrl ?? null,
       active: c.active,
       locale,
       direction: directionFor(locale),

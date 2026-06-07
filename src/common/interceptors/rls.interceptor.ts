@@ -57,10 +57,11 @@ export class RlsInterceptor implements NestInterceptor {
     user: AuthenticatedUser,
     next: CallHandler,
   ): Promise<unknown> {
-    const ip =
-      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ??
-      req.socket.remoteAddress ??
-      '127.0.0.1';
+    // Express's `req.ip` honours the app-level `trust proxy` setting wired in
+    // src/main.ts. With trust proxy configured, this is the real client IP
+    // (validated hop-count). Without trust proxy, we'd be parsing a header
+    // the client can spoof — so do NOT switch this back to a raw header read.
+    const ip = req.ip ?? req.socket.remoteAddress ?? '127.0.0.1';
 
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();

@@ -64,7 +64,7 @@ export class LearningService {
 
     const translations = this.buildTranslations({
       existing: {},
-      dtoTranslations: dto.translations,
+      dtoTranslations: dto.translations as Record<string, Record<string, string>> | undefined,
       canonicalTitle: dto.title,
       canonicalBody: dto.description ?? null,
       bodyKey: 'description',
@@ -98,8 +98,8 @@ export class LearningService {
     if (canonicalChanged || dto.translations !== undefined) {
       patch.translations = this.buildTranslations({
         existing:
-          (mod.translations as Record<string, ModuleLocaleDto>) ?? {},
-        dtoTranslations: dto.translations,
+          (mod.translations as Record<string, Record<string, string>>) ?? {},
+        dtoTranslations: dto.translations as Record<string, Record<string, string>> | undefined,
         canonicalTitle: dto.title ?? mod.title,
         canonicalBody:
           dto.description !== undefined ? dto.description : mod.description,
@@ -108,7 +108,7 @@ export class LearningService {
     }
 
     if (Object.keys(patch).length > 0) {
-      await this.modules.update({ id }, patch);
+      await this.modules.update({ id }, patch as any);
     }
     return this.adminModuleDto(await this.modules.findOneOrFail({ where: { id } }));
   }
@@ -133,7 +133,7 @@ export class LearningService {
 
     const translations = this.buildTranslations({
       existing: {},
-      dtoTranslations: dto.translations,
+      dtoTranslations: dto.translations as Record<string, Record<string, string>> | undefined,
       canonicalTitle: dto.title,
       canonicalBody: dto.contentText ?? null,
       bodyKey: 'content_html',
@@ -172,8 +172,8 @@ export class LearningService {
     if (canonicalChanged || dto.translations !== undefined) {
       patch.translations = this.buildTranslations({
         existing:
-          (lesson.translations as Record<string, LessonLocaleDto>) ?? {},
-        dtoTranslations: dto.translations,
+          (lesson.translations as Record<string, Record<string, string>>) ?? {},
+        dtoTranslations: dto.translations as Record<string, Record<string, string>> | undefined,
         canonicalTitle: dto.title ?? lesson.title,
         canonicalBody:
           dto.contentText !== undefined ? dto.contentText : lesson.contentText,
@@ -182,7 +182,7 @@ export class LearningService {
     }
 
     if (Object.keys(patch).length > 0) {
-      await this.lessons.update({ id }, patch);
+      await this.lessons.update({ id }, patch as any);
     }
     return this.adminLessonDto(
       await this.lessons.findOneOrFail({ where: { id } }),

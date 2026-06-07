@@ -1,0 +1,139 @@
+# =============================================================================
+# IOS LMS API — Build, push to GHCR, deploy to Droplet
+#
+# Runs on every push to `main` and on manual dispatch.
+#
+# Job 1 (build-push): builds the multi-stage Docker image, tags it with both
+#   `latest` and the commit SHA, pushes to ghcr.io.
+# Job 2 (deploy): SSHs into the Droplet, writes API_IMAGE into the runtime
+#   .env, runs `docker compose pull && up -d`. Then curls /health to verify.
+#
+# Required repository secrets (Settings -> Secrets and variables -> Actions):
+#   DROPLET_HOST          public IP or hostname of the Droplet
+#   DROPLET_USER          SSH user with docker permissions (e.g. `deploy`)
+#   DROPLET_SSH_KEY       private OpenSSH key authorised on the Droplet
+#
+# GHCR auth: uses GITHUB_TOKEN with `packages: write` permission below.
+# No PAT needed for the same repo.
+# =============================================================================
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.meta.outputs.tags }}
+      sha_tag: ${{ steps.sha.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute lowercase image name
+        id: img
+        run: echo "name=$(echo '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Compute short SHA
+        id: sha
+        run: echo "tag=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.img.outputs.name }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          target: runner
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (for compose file)
+        uses: actions/checkout@v4
+
+      - name: Compute lowercase image name
+        id: img
+        run: echo "name=$(echo 'ghcr.io/${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Add SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DROPLET_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.DROPLET_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Copy compose file to Droplet
+        run: |
+          scp -i ~/.ssh/id_ed25519 docker-compose.droplet.yml \
+            "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}:/opt/ios-lms/docker-compose.yml"
+
+      - name: Pull image and restart on Droplet
+        env:
+          IMAGE: ${{ steps.img.outputs.name }}:sha-${{ needs.build-push.outputs.sha_tag }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 \
+            "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}" \
+            "set -e; \
+             cd /opt/ios-lms; \
+             grep -q '^API_IMAGE=' .env && sed -i 's|^API_IMAGE=.*|API_IMAGE=${IMAGE}|' .env || echo 'API_IMAGE=${IMAGE}' >> .env; \
+             echo '${{ secrets.GITHUB_TOKEN }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin; \
+             docker compose pull; \
+             docker compose up -d; \
+             docker image prune -f"
+
+      - name: Health check
+        run: |
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            if curl -fsS --max-time 5 "http://${{ secrets.DROPLET_HOST }}:3000/health"; then
+              echo
+              echo "Health check passed."
+              exit 0
+            fi
+            echo "Attempt $i failed, retrying in 5s..."
+            sleep 5
+          done
+          echo "Health check failed after 10 attempts."
+          ssh -i ~/.ssh/id_ed25519 \
+            "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}" \
+            "cd /opt/ios-lms && docker compose logs --tail=200 api" || true
+          exit 1

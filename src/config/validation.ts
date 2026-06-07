@@ -1,5 +1,20 @@
 import * as Joi from 'joi';
 
+// Well-known dev-default secrets that ship in docker-compose.yml /
+// .env.example as `:-` fallbacks. If any of these reach the app in
+// production, refuse to boot — this is the safety net for production
+// deploys where these fallbacks must never apply.
+const KNOWN_DEV_JWT_SECRETS = [
+  'development-only-jwt-access-secret-min-64-chars-replace-in-production',
+  'development-only-jwt-refresh-secret-different-from-access-secret-here',
+  'change-me-min-64-chars-random-string-generated-securely-for-production',
+  'change-me-separate-refresh-secret-min-64-chars-random-string',
+];
+
+// Mock external-service keys that ship as `:-` defaults. Useful in dev,
+// lethal in prod.
+const KNOWN_MOCK_KEYS = ['sk_test_mock', 'whsec_mock', 'SG.mock'];
+
 export const validationSchema = Joi.object({
   NODE_ENV: Joi.string()
     .valid('development', 'staging', 'production', 'test')
@@ -9,13 +24,50 @@ export const validationSchema = Joi.object({
   APP_BASE_URL: Joi.string().uri().required(),
   DATABASE_URL: Joi.string().required(),
   REDIS_URL: Joi.string().required(),
-  JWT_SECRET: Joi.string().min(32).required(),
-  JWT_REFRESH_SECRET: Joi.string().min(32).required(),
+  JWT_SECRET: Joi.string()
+    .min(32)
+    .required()
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.string()
+        .invalid(...KNOWN_DEV_JWT_SECRETS)
+        .messages({
+          'any.invalid':
+            'JWT_SECRET is set to a well-known dev default. Generate a fresh random secret before deploying to production.',
+        }),
+    }),
+  JWT_REFRESH_SECRET: Joi.string()
+    .min(32)
+    .required()
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.string()
+        .invalid(...KNOWN_DEV_JWT_SECRETS)
+        .messages({
+          'any.invalid':
+            'JWT_REFRESH_SECRET is set to a well-known dev default. Generate a fresh random secret before deploying to production.',
+        }),
+    }),
   JWT_ACCESS_TTL: Joi.number().default(900),
   JWT_REFRESH_TTL: Joi.number().default(604800),
-  STRIPE_SECRET_KEY: Joi.string().required(),
-  STRIPE_WEBHOOK_SECRET: Joi.string().required(),
-  SENDGRID_API_KEY: Joi.string().required(),
+  STRIPE_SECRET_KEY: Joi.string()
+    .required()
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.string().invalid(...KNOWN_MOCK_KEYS),
+    }),
+  STRIPE_WEBHOOK_SECRET: Joi.string()
+    .required()
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.string().invalid(...KNOWN_MOCK_KEYS),
+    }),
+  SENDGRID_API_KEY: Joi.string()
+    .required()
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.string().invalid(...KNOWN_MOCK_KEYS),
+    }),
 
   // ── Storage (S3-compatible: MinIO in dev, DO Spaces in prod) ──────────
   DO_SPACES_ENDPOINT: Joi.string().uri().required(),

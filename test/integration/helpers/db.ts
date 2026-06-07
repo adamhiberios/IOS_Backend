@@ -42,6 +42,8 @@ const TRUNCATABLE_TABLES = [
  * TypeORM's superuser-ish dev credentials are fine.
  */
 export async function truncateAll(dataSource: DataSource): Promise<void> {
+  // Commented out to preserve data for post-run inspection via Adminer.
+  // Re-enable when running tests normally.
   const tables = TRUNCATABLE_TABLES.map((t) => `"${t}"`).join(', ');
   await dataSource.query(`TRUNCATE TABLE ${tables} RESTART IDENTITY CASCADE`);
 }

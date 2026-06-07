@@ -31,9 +31,8 @@
     "docker:psql": "docker compose exec postgres psql -U ios -d ios_lms",
     "docker:redis-cli": "docker compose exec redis redis-cli",
     "docker:build": "docker compose build",
-    "docker:prod": "docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build",
     "test:integration": "npm run test:integration:throttler && npm run test:integration:main",
-    "test:integration:watch": "NODE_ENV=test jest --config test/integration/jest.config.json --runInBand --watch",
+    "test:integration:watch": "NODE_ENV=test jest --config test/integration/jest.config.json --runInBand --watchAll",
     "test:all": "npm test && npm run test:integration",
     "test:integration:main": "NODE_ENV=test jest --config test/integration/jest.config.json --runInBand --testPathIgnorePatterns=\"throttler\"",
     "test:integration:throttler": "NODE_ENV=test TEST_THROTTLE_AUTH_LIMIT=5 jest --config test/integration/jest.config.json --runInBand --testPathPatterns=\"throttler\""

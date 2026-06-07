@@ -18,7 +18,7 @@ import {
 import type { Response } from 'express';
 
 import { CurrentUser } from '../auth/decorators';
-import { AuthenticatedUser } from '../../common/interceptors/rls.interceptor';
+import type { AuthenticatedUser } from '../../common/interceptors/rls.interceptor';
 import { AuthService } from '../auth/auth.service';
 import { ProfileService } from './profile.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';

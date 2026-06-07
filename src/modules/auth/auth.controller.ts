@@ -227,6 +227,11 @@ export class AuthController {
       secure:
         process.env.NODE_ENV === 'production' ||
         process.env.NODE_ENV === 'staging',
+      // 'lax' — lets the refresh cookie ride top-level navigations (e.g. OAuth
+      // redirects back to the app) while still blocking it on cross-site
+      // sub-resource requests. 'strict' would silently drop the cookie on any
+      // cross-origin redirect that lands on an auth endpoint, breaking flows
+      // like email-verified → redirect → auto-login.
       sameSite: 'lax',
       path: REFRESH_COOKIE_PATH,
       maxAge: REFRESH_COOKIE_MAX_AGE_MS,

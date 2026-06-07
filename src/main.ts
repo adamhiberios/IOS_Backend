@@ -10,26 +10,43 @@ async function bootstrap() {
     bufferLogs: false,
   });
 
-  // ── Security headers ────────────────────────────────────────────────────
+  // -- Security headers --
   app.use(helmet());
 
-  // ── Cookie parsing — required for the refresh-token cookie ──────────────
+  // -- Trust proxy --
+  // Production runs behind a single trusted load balancer / reverse proxy
+  // (DO App Platform LB, nginx, etc.). With `trust proxy` set, Express
+  // populates `req.ip` from X-Forwarded-For with hop-count validation and
+  // the throttler keys off the real client IP rather than the proxy's.
+  // Without this set, a direct client can spoof X-Forwarded-For and bypass
+  // any IP-based rate limit or audit attribution.
+  //
+  // Set to 1 = trust the single proxy directly in front of us. If you stack
+  // more proxies (Cloudflare -> LB -> API), raise this to the hop count or
+  // pass a specific subnet. In development (no proxy) this is a harmless
+  // no-op because X-Forwarded-For won't be present.
+  const httpAdapter = app.getHttpAdapter().getInstance();
+  if (typeof httpAdapter?.set === 'function') {
+    httpAdapter.set('trust proxy', 1);
+  }
+
+  // -- Cookie parsing - required for the refresh-token cookie --
   app.use(cookieParser());
 
-  // ── API prefix ─────────────────────────────────────────────────────────
+  // -- API prefix --
   app.setGlobalPrefix('api/v1', { exclude: ['health'] });
 
-  // ── CORS ───────────────────────────────────────────────────────────────
+  // -- CORS --
   app.enableCors({
     origin: process.env.APP_BASE_URL ?? 'http://localhost:4000',
     credentials: true,
   });
 
-  // ── Swagger (staging + dev only) ───────────────────────────────────────
+  // -- Swagger (staging + dev only) --
   if (process.env.NODE_ENV !== 'production') {
     const config = new DocumentBuilder()
       .setTitle('IOS LMS API')
-      .setDescription('Institute of Scrum LMS Backend API — v1')
+      .setDescription('Institute of Scrum LMS Backend API - v1')
       .setVersion('1.0')
       .addBearerAuth({
         type: 'http',

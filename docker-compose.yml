@@ -191,6 +191,7 @@ services:
       - ./nest-cli.json:/app/nest-cli.json
       - ./package.json:/app/package.json
       - ./package-lock.json:/app/package-lock.json
+      - ./coverage:/app/coverage
     networks:
       - ios-lms-net
 
