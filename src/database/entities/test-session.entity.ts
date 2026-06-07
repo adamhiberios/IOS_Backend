@@ -44,6 +44,15 @@ export class TestSession {
   @JoinColumn({ name: 'exam_id' })
   exam: Exam;
 
+  /**
+   * The certificate this exam attempt is working towards.
+   * Populated at startExam time from ExamAccessCode.certId.
+   * Nullable because legacy rows pre-migration will not have it.
+   */
+  @Index()
+  @Column({ type: 'uuid', nullable: true })
+  certId: string | null;
+
   @Column({ type: 'text' })
   sessionToken: string;
 

@@ -109,6 +109,8 @@ export class AuthAdminController {
       secure:
         process.env.NODE_ENV === 'production' ||
         process.env.NODE_ENV === 'staging',
+      // 'lax' — consistent with AuthController. Allows the cookie on top-level
+      // navigations while blocking cross-site sub-resource requests.
       sameSite: 'lax',
       path: REFRESH_COOKIE_PATH,
       maxAge: REFRESH_COOKIE_MAX_AGE_MS,

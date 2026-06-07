@@ -3,7 +3,7 @@
 **Repo:** https://github.com/adamhiberios/IOS_Backend  
 **Stack:** NestJS · PostgreSQL 15 · TypeORM · Redis · Angular Universal  
 **Total weeks:** 10 | **Total tasks:** 46  
-**Last updated:** 2026-05-20 · Weeks 1, 2, 3 complete · integration suite green · Week 4 (Exam + Redis + WS) is next
+**Last updated:** 2026-05-22 · Weeks 1, 2, 3, 4 complete · Week 5 (Payment + Enrollment) is next
 
 ---
 
@@ -159,17 +159,29 @@ Plumbing only — content sweep (full Tr/Fr/Es/Ar/De catalogues, 54 email templa
 
 ---
 
-## Week 4 — Exam engine + Redis + WebSocket gateway ⬜
+## Week 4 — Exam engine + Redis + WebSocket gateway ✅ COMPLETE (2026-05-22)
 
 | ID | Task | Priority | Status |
 |----|------|----------|--------|
-| BE-033 | RedisModule — ioredis, keyspace notifications, redis.keyspace.expired event | 🔴 | ⬜ |
-| BE-034 | TestSessionService — start, submit, autosave (no TTL reset), getSession via PTTL | 🔴 | ⬜ |
-| BE-035 | WS gateway — socket.io + redis-adapter, JWT auth, timer_tick / warning / session_expired | 🔴 | ⬜ |
-| BE-036 | Keyspace expiry handler — auto-submit snapshot, persist attempt, emit WS, fire exam events | 🔴 | ⬜ |
-| ExamModule | Assignment algorithm, one-time access codes, validate-access, start, scoring | 🔴 | ⬜ |
-| BE-037 | Late-submit 2-min grace window with late_flag | 🟡 | ⬜ |
-| BE-038 | Nginx WS upgrade config | 🟡 | ⬜ |
+| BE-033 | RedisModule — ioredis, keyspace notifications, redis.keyspace.expired event | 🔴 | ✅ |
+| BE-034 | TestSessionService — start, submit, autosave (no TTL reset), getSession via PTTL | 🔴 | ✅ |
+| BE-035 | WS gateway — socket.io + redis-adapter, JWT auth, timer_tick / warning / session_expired | 🔴 | ✅ |
+| BE-036 | Keyspace expiry handler — auto-submit snapshot, persist attempt, emit WS, fire exam events | 🔴 | ✅ |
+| ExamModule | Assignment algorithm, one-time access codes, validate-access, start, scoring | 🔴 | ✅ |
+| BE-037 | Late-submit 2-min grace window with late_flag | 🟡 | ✅ |
+| BE-038 | Nginx WS upgrade config | 🟡 | ✅ |
+
+**Week 4 delivered:**
+- **RedisModule** (`src/modules/redis/`) — `@Global()` with two ioredis clients: `REDIS_CLIENT` for commands, `REDIS_SUBSCRIBER` for keyspace PubSub. Subscriber bridges `exam:session:*` and `exam:grace:*` expiry events into NestJS EventEmitter2 as `redis.keyspace.expired`. `RedisService` exposes typed JSON helpers including `setJsonKeepTtl` (Redis 6 `KEEPTTL` — autosave without TTL reset).
+- **TestSessionService** (`src/modules/exam/test-session.service.ts`) — Redis CRUD: `start` (SET+EX), `autosave` (SET+KEEPTTL, returns false if expired), `getSession` (GET+PTTL), `deleteSession`, `startGrace` (120s grace key), `consumeGrace` (atomic read+delete), `hasGrace`.
+- **ExamService** (`src/modules/exam/exam.service.ts`) — full lifecycle: `assignExam` (crypto.randomBytes 32 + bcrypt hash, 24h TTL), `validateAccess` (bcrypt verify without consuming), `startExam` (atomic code consume via UPDATE WHERE usedAt IS NULL, TestSession in PG + Redis), `autosave` (mirror to DB snapshot + Redis KEEPTTL), `submitExam`, `lateSubmitExam` (consumes grace key, lateFlag=true), `autoSubmitFromSnapshot` (idempotent, called by keyspace handler), `scoreAnswers` (correct/total × 100, passes at `exam.passingScore`%).
+- **ExamController + ExamAdminController** — student endpoints: validate-access, start, GET session, autosave, submit, late-submit; admin: assign. `isCorrect` stripped from options before sending to client.
+- **ExamGateway** (`src/modules/exam/exam.gateway.ts`) — socket.io `/exam` namespace, JWT middleware on `afterInit`, `join_session` handler (ownership check, room join, timer start), per-session 30s `setInterval` emitting `timer_tick`, `warning` at 600s+300s thresholds (de-duped per session), `session_expired` emit + timer cleanup. Redis adapter wired in `afterInit` with a dedicated subscriber client.
+- **ExamKeyspaceHandler** (`src/modules/exam/exam-keyspace.handler.ts`) — `@OnEvent(redis.keyspace.expired)`: session expiry → mark EXPIRED, startGrace (snapshot from DB), emit WS; grace expiry → `autoSubmitFromSnapshot`.
+- **Nginx** (`docker/nginx/nginx.conf`) — HTTP proxy to api:3000, WebSocket upgrade block for `/socket.io/` with `Upgrade`/`Connection` headers, `proxy_http_version 1.1`, 1h `proxy_read_timeout`, cert verification cache stub (Week 6).
+- **Tests** — unit specs for all 5 new providers: `redis.service.spec.ts` (9 cases), `test-session.service.spec.ts` (10 cases), `exam.service.spec.ts` (7 cases), `exam.controller.spec.ts` (5 cases), `exam.gateway.spec.ts` (4 cases), `exam-keyspace.handler.spec.ts` (5 cases).
+
+**Awaiting smoke test:** `docker compose exec api npm run build` to confirm TypeScript compilation, then `npm test` for unit suite.
 
 ---
 

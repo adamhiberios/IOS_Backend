@@ -63,6 +63,8 @@ ENV NODE_ENV=production \
 COPY --from=deps    --chown=node:node /app/node_modules ./node_modules
 COPY --from=builder --chown=node:node /app/dist         ./dist
 COPY                --chown=node:node package.json      ./
+COPY                --chown=node:node docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
 USER node
 
@@ -71,5 +73,6 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/health || exit 1
 
-ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["node", "dist/main"]
+# tini is PID 1 and forwards signals to the entrypoint, which runs migrations
+# then execs node (so node becomes PID of the actual app under tini).
+ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/entrypoint.sh"]

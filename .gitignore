@@ -29,3 +29,5 @@ logs/
 # Test coverage
 coverage/
 .env.test-runtime
+
+graphify-out/

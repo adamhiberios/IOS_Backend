@@ -79,7 +79,7 @@ export class ProfileService {
       return this.toResponseDto(user);
     }
 
-    await this.users.update({ id: userId }, patch);
+    await this.users.update({ id: userId }, patch as any);
     const refreshed = await this.users.findOneOrFail({ where: { id: userId } });
     return this.toResponseDto(refreshed);
   }

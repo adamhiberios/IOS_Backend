@@ -14,7 +14,7 @@ Backend for the Institute of Scrum Learning Management System.
 
 ```bash
 # 1. Copy the env template
-cp .env.docker.example .env
+cp .env.example .env
 
 # 2. Start everything (Postgres + Redis + API + Adminer)
 docker compose up
@@ -101,12 +101,8 @@ Current status: **85 tests, 97.59% statement coverage.** New code must ship with
 
 ## Production deployment
 
-For self-hosted (single DigitalOcean Droplet):
+Production runs on a DigitalOcean Droplet, with Managed Postgres, Managed Valkey, and Spaces as the data layer. The image is built by GitHub Actions, pushed to GHCR, and pulled on the Droplet via `docker-compose.droplet.yml`.
 
-```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
-```
+See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the full step-by-step.
 
-For managed services (DO Managed Postgres + Managed Caching/Valkey), drop the `postgres` and `redis` services and point `DATABASE_URL` / `REDIS_URL` at the managed instances.
-
-See `IOS_LMS_Backend_TaskTracker.md` for the full project plan.
+See `IOS_LMS_Backend_TaskTracker.md` for the project plan.

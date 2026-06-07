@@ -15,8 +15,7 @@
   "forceExit": true,
   "collectCoverage": false,
   "reporters": [
-  "default",
-  ["jest-junit", { "outputDirectory": "./coverage", "outputName": "integration-junit.xml" }],
-  ["jest-html-reporter", { "outputPath": "./coverage/integration-report.html", "pageTitle": "IOS LMS Integration" }]
-]
+    "default",
+    ["jest-html-reporter", { "outputPath": "./coverage/integration-report.html", "pageTitle": "IOS LMS Integration" }]
+  ]
 }

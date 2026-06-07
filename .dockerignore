@@ -42,3 +42,7 @@ docker-compose*.yml
 README.md
 IOS_LMS_Backend_TaskTracker.md
 *.md
+
+# Deployment / ops scripts (not needed in the production image)
+scripts/
+.github/
