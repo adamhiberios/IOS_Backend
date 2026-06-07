@@ -23,6 +23,19 @@ const REFRESH_COOKIE_NAME = 'refreshToken';
 const REFRESH_COOKIE_PATH = '/api/v1/auth';
 const REFRESH_COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
+// Same env-aware override pattern as AuthController — keep tests from tripping
+// the 5/60s production limit when one suite logs many admins in (catalog,
+// learning, etc. each do an admin login per test).
+const AUTH_THROTTLE = {
+  auth: {
+    limit:
+      process.env.NODE_ENV === 'test'
+        ? Number(process.env.TEST_THROTTLE_AUTH_LIMIT ?? 100_000)
+        : 5,
+    ttl: 60_000,
+  },
+};
+
 @ApiTags('auth-admin')
 @Controller('auth/admin')
 export class AuthAdminController {
@@ -30,7 +43,7 @@ export class AuthAdminController {
 
   @Public()
   @Post('login')
-  @Throttle({ auth: { limit: 5, ttl: 60_000 } })
+  @Throttle(AUTH_THROTTLE)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Log in as admin staff',

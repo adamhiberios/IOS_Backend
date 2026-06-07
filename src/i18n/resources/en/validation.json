@@ -1,0 +1,16 @@
+{
+  "is_email": "Must be a valid email address",
+  "is_not_empty": "Must not be empty",
+  "is_string": "Must be a string",
+  "is_int": "Must be an integer",
+  "is_uuid": "Must be a valid UUID",
+  "is_boolean": "Must be a boolean",
+  "is_date_string": "Must be a valid ISO 8601 date string",
+  "min_length": "Must be at least {constraints.min} characters",
+  "max_length": "Must be at most {constraints.max} characters",
+  "min": "Must be at least {constraints.min}",
+  "max": "Must be at most {constraints.max}",
+  "matches": "Format is invalid",
+  "is_in": "Must be one of: {constraints.values}",
+  "is_strong_password": "Password must contain a mix of upper, lower, number, and special character"
+}

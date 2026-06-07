@@ -1,0 +1,40 @@
+{
+  "validation": {
+    "failed": {
+      "title": "Doğrulama başarısız",
+      "detail": "İsteğinizdeki bir veya daha fazla alan geçersiz. Ayrıntılar için errors dizisine bakın."
+    },
+    "invalid_locale": {
+      "title": "Desteklenmeyen dil",
+      "detail": "'{requested}' dili desteklenmiyor. Desteklenen diller: en, tr, fr, es, ar, de."
+    }
+  },
+  "auth": {
+    "invalid_credentials": {
+      "title": "Geçersiz kimlik bilgileri",
+      "detail": "Girdiğiniz e-posta veya parola, aktif bir hesapla eşleşmiyor."
+    },
+    "jwt_expired": {
+      "title": "Oturum süresi doldu",
+      "detail": "Oturumunuzun süresi doldu. Lütfen belirteci yenileyip tekrar deneyin."
+    },
+    "email_not_verified": {
+      "title": "E-posta doğrulanmadı",
+      "detail": "Giriş yapmadan önce lütfen e-posta adresinizi doğrulayın."
+    },
+    "insufficient_role": {
+      "title": "Yetersiz yetki",
+      "detail": "Bu işlem için şu rollerden biri gerekli: {required}."
+    }
+  },
+  "infrastructure": {
+    "rate_limited": {
+      "title": "Çok fazla istek",
+      "detail": "Çok fazla istek yaptınız. {retryAfterSeconds} saniye sonra tekrar deneyin."
+    },
+    "internal": {
+      "title": "Bir hata oluştu",
+      "detail": "Beklenmeyen bir hata oluştu. Lütfen tekrar deneyin."
+    }
+  }
+}

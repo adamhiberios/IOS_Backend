@@ -9,6 +9,7 @@ import {
 import { UuidEntity } from './base.entity';
 import { Certificate } from './certificate.entity';
 import { Lesson } from './lesson.entity';
+import type { Translations } from '../../common/i18n/types';
 
 @Entity('learning_modules')
 export class LearningModule extends UuidEntity {
@@ -27,6 +28,13 @@ export class LearningModule extends UuidEntity {
 
   @Column({ type: 'text', nullable: true })
   description: string | null;
+
+  /** Per-locale title and description. See Certificate.translations for shape. */
+  @Column({
+    type: 'jsonb',
+    default: () => `'{}'::jsonb`,
+  })
+  translations: Translations<'title' | 'description'>;
 
   @Column({ type: 'int', default: 0 })
   position: number;

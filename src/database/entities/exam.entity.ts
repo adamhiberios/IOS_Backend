@@ -12,6 +12,7 @@ import { Certificate } from './certificate.entity';
 import { ExamAccessCode } from './exam-access-code.entity';
 import { ExamAttempt } from './exam-attempt.entity';
 import { TestSession } from './test-session.entity';
+import type { Translations } from '../../common/i18n/types';
 
 export enum ExamStatus {
   DRAFT = 'draft',
@@ -54,6 +55,13 @@ export class Exam extends UuidEntity {
 
   @Column({ type: 'uuid', nullable: true })
   createdById: string | null;
+
+  /** Per-locale exam title shown to the student before starting. */
+  @Column({
+    type: 'jsonb',
+    default: () => `'{}'::jsonb`,
+  })
+  translations: Translations<'title'>;
 
   @OneToMany(() => ExamQuestion, (q) => q.exam, { cascade: true })
   questions: ExamQuestion[];

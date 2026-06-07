@@ -22,6 +22,14 @@ services:
     restart: always
     environment:
       NODE_ENV: production
+    # In prod the api does NOT wait on minio-init (which is disabled below).
+    # Point DO_SPACES_ENDPOINT / DO_SPACES_PUBLIC_URL at the real DO Spaces
+    # hostname via host env when bringing the stack up.
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     # No source volumes in production — code is baked into the image
     volumes: []
     # Production resource limits — adjust based on Droplet size
@@ -52,5 +60,16 @@ services:
 
   # Adminer is not for production. Override removes it from the running stack.
   adminer:
+    profiles:
+      - never
+
+  # MinIO is the dev stand-in for DO Spaces. In production, point
+  # DO_SPACES_ENDPOINT and DO_SPACES_PUBLIC_URL at the real DO Spaces hostname
+  # via env, and the API talks directly to Spaces — no local object store.
+  minio:
+    profiles:
+      - never
+
+  minio-init:
     profiles:
       - never

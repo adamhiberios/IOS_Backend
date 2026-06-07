@@ -35,6 +35,15 @@ export class AdminUser extends UuidEntity {
   @Column({ type: 'enum', enum: AdminRole })
   role: AdminRole;
 
+  /**
+   * UI / notification locale preference for this admin. Used by the i18n
+   * resolver chain (rank #1) so an Arabic-preferring admin sees Arabic
+   * admin-portal copy even from a German-locale browser. CHECK constraint at
+   * the DB layer enforces the supported set.
+   */
+  @Column({ type: 'varchar', length: 10, default: 'en' })
+  locale: string;
+
   @Column({ type: 'boolean', default: true })
   active: boolean;
 

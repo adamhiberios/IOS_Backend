@@ -3,7 +3,7 @@
 **Repo:** https://github.com/adamhiberios/IOS_Backend  
 **Stack:** NestJS · PostgreSQL 15 · TypeORM · Redis · Angular Universal  
 **Total weeks:** 10 | **Total tasks:** 46  
-**Last updated:** Week 2 complete · smoke-tested end-to-end
+**Last updated:** 2026-05-20 · Weeks 1, 2, 3 complete · integration suite green · Week 4 (Exam + Redis + WS) is next
 
 ---
 
@@ -100,14 +100,62 @@
 
 ---
 
-## Week 3 — Catalog, content, learning APIs ⬜ UP NEXT
+## i18n infrastructure pass ✅ COMPLETE (landed 2026-05-20, ahead of Week 9)
+
+Plumbing only — content sweep (full Tr/Fr/Es/Ar/De catalogues, 54 email templates × 6 locales) still lives in Week 9. Pulled forward so every controller, DTO, and exception that ships from Week 3 onwards is locale-aware by default.
+
+**Branch:** `feat/i18n-infrastructure` · **Summary doc:** `docs/i18n-infrastructure.md`
+
+| Area | Delivered |
+|---|---|
+| Migration `1748000000000-AddI18nSupport.ts` | `translations` JSONB on certificates / learning_modules / lessons / exams / blog_articles · `locale` column on admin_users · CHECK constraint on users.locale + admin_users.locale · pg_trgm extension · GIN trigram indexes on `(translations -> 'en' ->> 'title')` for each translatable entity |
+| Entities updated | Certificate, LearningModule, Lesson, Exam (auth-misc) BlogArticle, AdminUser · `import type { Translations }` (isolatedModules + emitDecoratorMetadata friendly) |
+| i18n module | `src/i18n/i18n.module.ts` (AppI18nModule) — 5-resolver chain: UserPreferenceResolver → HeaderResolver('x-lang') → QueryResolver('lang') → AcceptLanguageResolver → CookieResolver('lang') → fallback DEFAULT_LOCALE |
+| Resolver | `UserPreferenceResolver` reads `req.user.locale` from the JWT payload (already populated by JwtStrategy) — ranks above network-supplied hints |
+| Resource bundles | `src/i18n/resources/en/{errors,validation,common,emails}.json` full · `tr/errors.json` and `ar/errors.json` partial · `fr/es/de/errors.json` skeleton (Week 9 fills) |
+| Error layer | `src/common/errors/` — `AppException` base, `ErrorCode` registry, family-grouped classes (auth / authorization / domain / validation / infrastructure), `codeToSlug()` for stable `type` URLs |
+| GlobalExceptionFilter | Full rewrite — DI'd `I18nService`, awaits both `t()` calls in Promise.all, emits `application/problem+json` with stable `code`, `request_id` header, structured logging (5xx error / refresh-reuse warn / 4xx debug) |
+| Shared types | `src/common/i18n/types.ts` — Locale const tuple, Translations generic, `resolveTranslation()` helper with fallback chain, `directionFor()` (rtl for ar) |
+| nest-cli.json | `assets` entry copies `i18n/resources/**/*.json` to dist on build |
+| AppModule | `AppI18nModule` imported ahead of feature modules so `I18nService` is ready when `APP_FILTER` instantiates the filter |
+| Test infra fixes | `docker/postgres/init.sql` pre-installs pg_trgm · `test/integration/setup.ts` replaces blanket `REASSIGN OWNED BY` with enumerated `ALTER TABLE/SEQUENCE/FUNCTION ... OWNER TO` (avoids REASSIGN failing on pg_trgm's pinned operator class) · `test/integration/helpers/app.ts` removed `app.useGlobalFilters(new GlobalExceptionFilter())` that was DI-bypassing |
+| Tests | `global-exception.filter.spec.ts` rewritten (11 cases against new shape) · `user-preference.resolver.spec.ts` (4 cases) · `common/i18n/types.spec.ts` (helpers + fallback chain) |
+
+**Production runbook addition:** DO Managed PG has `pg_trgm` on its allowlist but it must be enabled once via the admin console — `CREATE EXTENSION IF NOT EXISTS pg_trgm` as the admin role before the first migration runs against prod.
+
+---
+
+## Week 3 — Catalog, content, learning APIs ✅ COMPLETE (integration suite green 2026-05-20)
 
 | ID | Task | Priority | Status |
 |----|------|----------|--------|
-| BE-029R | DO Spaces StorageService — public-read certs, auth media, signed URLs videos | 🔴 | ⬜ |
-| Catalog APIs | GET /catalog, GET /catalog/:id, content gating per enrollment | 🔴 | ⬜ |
-| Learning APIs | Modules + lessons CRUD, lesson serving with purchase gate, progress tracking | 🔴 | ⬜ |
-| BE-041 | Catalog search — GET /catalog?search=&program_code=&sort= with cursor pagination | 🟡 | ⬜ |
+| BE-029R | S3-compatible StorageService — MinIO in docker-compose for dev, swap env vars for DO Spaces in prod; public-read certs / auth media / signed URLs videos | 🔴 | ✅ |
+| Catalog APIs | Public GET /catalog (cursor-paginated, i18n-resolved) + GET /catalog/:id; admin POST/PATCH/DELETE on /admin/catalog plus dedicated /translations endpoint (per-locale merge) | 🔴 | ✅ |
+| Learning APIs | Admin module + lesson CRUD on /admin/modules + /admin/lessons; student GET /learning/certs/:certId/curriculum, GET /learning/lessons/:id (with signed video URL), POST /learning/lessons/:id/complete, GET /learning/progress | 🔴 | ✅ |
+| Profile APIs | GET /me, PATCH /me, PATCH /me/password (separate endpoint; revokes all refresh tokens like password reset does) | 🔴 | ✅ |
+| BE-041 | Catalog search — GET /catalog?search=&program_code=&sort= with cursor pagination (uses the GIN trigram index from the i18n migration) | 🟡 | ✅ |
+
+**Profile / Catalog / Learning delivered:**
+- **Profile:** `src/modules/profile/{profile.module.ts,profile.service.ts,profile.controller.ts}` + DTOs (`UpdateProfileDto`, `UpdatePasswordDto`, `ProfileResponseDto`). `AuthService.changePassword(userId, current, new)` added — verifies current via bcrypt, hashes new at cost-12, revokes all refresh tokens. Allowlist of editable fields enforced server-side (firstName, lastName, phone, locale, country, city, street, address, postalCode, occupation, position, company, avatarUrl) on top of class-validator's `forbidNonWhitelisted`. Explicit `null` clears; `undefined` is no-op.
+- **Catalog:** `src/modules/catalog/` — `CatalogService` with cursor-based pagination (`(created_at, id)` tiebreaker, base64-encoded opaque cursor), trigram search against `(translations -> 'en' ->> 'title')`, per-locale resolution with English fallback, `fallbackUsed` flag on every item, soft-delete via `active=false`. Two controllers: `CatalogController` (public, GET only, hides inactive) and `CatalogAdminController` (RolesGuard — content_creator + learning_admin for writes, learning_admin only for delete). Dedicated `PATCH /admin/catalog/:id/translations` does a shallow per-locale merge so locales not in the body are preserved.
+- **Learning:** `src/modules/learning/` — `LearningService` covers admin module + lesson CRUD plus student-side curriculum tree, lesson serving, idempotent complete, per-cert progress summary. Purchase gate runs through `req.rlsRunner` (the RLS-aware transaction opened by `RlsInterceptor`) so RLS on `student_purchases` is the second line of defence behind the app-layer `userId` filter. Lesson videos are private-bucket signed URLs minted on every request with a 1-hour TTL.
+- **i18n:** Every response carries `locale` + `direction` (`rtl` for ar). Resolution chain unchanged: user pref → X-Lang → ?lang → Accept-Language → cookie → DEFAULT_LOCALE.
+
+**Test infrastructure adds:**
+- `test/integration/profile/{update-profile,update-password}.e2e-spec.ts` — 6 + 5 cases.
+- `test/integration/catalog/catalog-crud.e2e-spec.ts` — 10 cases (public + admin, role enforcement, translations merge, search, cursor pagination, conflict).
+- `test/integration/learning/curriculum.e2e-spec.ts` — 7 cases (admin CRUD, content_creator vs learning_admin permission split, purchase gate enforcement, locale-aware lesson serving, idempotent completion, progress summary, anonymous 401 sweep). The `enrollStudent` helper wraps the seed INSERT in a transaction with `set_config('app.current_user_id', ...)` so the FORCE RLS on `student_purchases` is satisfied at seed time.
+
+**Awaiting:** `docker compose exec api npm run test:integration` to confirm the suite is green. The unit test layer (`storage`, `health`, `profile.service`, etc.) ships alongside but isn't run from this session — same toolchain limit on the VM.
+
+**BE-029R delivered:**
+- `docker-compose.yml` — `minio` service (S3 API on 9000, console on 9001) + `minio-init` companion that idempotently creates 3 buckets with correct anonymous policies (`ios-lms-certificates` public-read, `ios-lms-media` / `ios-lms-videos` private). API service depends on `minio-init: service_completed_successfully`.
+- `docker-compose.prod.yml` — MinIO services profiled out (`profiles: [never]`); api `depends_on` overrides to skip the dev-only chain.
+- `.env.example` + `src/config/validation.ts` — three explicit buckets (`DO_SPACES_BUCKET_CERTIFICATES/MEDIA/VIDEOS`), `DO_SPACES_ENDPOINT` (SDK target) vs `DO_SPACES_PUBLIC_URL` (client-facing — diverges in dev only), `DO_SPACES_REGION` default `us-east-1`. Old single `DO_SPACES_BUCKET` retired.
+- `src/modules/storage/` — `StorageModule` (`@Global`), `StorageService` (AWS SDK v3 S3Client + presigner, `forcePathStyle: true`), methods: `uploadObject`, `getPublicUrl`, `getSignedUrl`, `getSignedUploadUrl` (direct browser-to-S3 uploads for Week 8 avatars), `deleteObject`, `objectExists`, `healthCheck`, static `buildKey(...)` helper. `OnModuleInit` smoke-checks each bucket but warns rather than throws so the app can boot in degraded mode during MinIO warm-up.
+- Public-URL rewrite: signed URLs minted against the internal endpoint have their host rewritten to the public base so browser clients can resolve them. No-op in prod where the two URLs are identical.
+- `src/modules/health/health.controller.ts` — `/health/full` now reports per-bucket reachability and rolls into overall status.
+- Spec suite: `storage.service.spec.ts` (15 cases — wiring, public URL rules, signed GET/PUT rewriting, bucket routing, lifecycle, 404 handling, health, key conventions), `health.controller.spec.ts` updated for the storage mock.
 
 ---
 

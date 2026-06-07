@@ -14,11 +14,13 @@
 #   docker compose logs -f api
 #
 # Service URLs (from host):
-#   API           http://localhost:3000
-#   Swagger       http://localhost:3000/api/docs
-#   Postgres      localhost:5432  (user: ios, pass: iospass, db: ios_lms)
-#   Redis         localhost:6379
-#   Adminer (DB)  http://localhost:8080
+#   API             http://localhost:3000
+#   Swagger         http://localhost:3000/api/docs
+#   Postgres        localhost:5432  (user: ios, pass: iospass, db: ios_lms)
+#   Redis           localhost:6379
+#   Adminer (DB)    http://localhost:8080
+#   MinIO (S3 API)  http://localhost:9000
+#   MinIO Console   http://localhost:9001 (login: minioadmin / minioadmin)
 # =============================================================================
 
 name: ios-lms
@@ -70,6 +72,65 @@ services:
     networks:
       - ios-lms-net
 
+  # ─── MinIO (S3-compatible object storage for dev) ─────────────────────────
+  # Stands in for DigitalOcean Spaces in dev. Same S3 API, same SDK call sites,
+  # same signed-URL semantics — switching to real DO Spaces is a pure env swap
+  # (DO_SPACES_ENDPOINT, KEY, SECRET, and DO_SPACES_PUBLIC_URL).
+  minio:
+    image: minio/minio:latest
+    container_name: ios-lms-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - ios-lms-net
+
+  # ─── MinIO bucket initialiser (runs once, exits) ──────────────────────────
+  # Idempotently creates the three buckets used by the StorageService and sets
+  # the right anonymous-access policy on each:
+  #   ios-lms-certificates  → public-read (cert PDFs are linkable by URL)
+  #   ios-lms-media         → private (authenticated avatar/thumbnail downloads)
+  #   ios-lms-videos        → private (lesson video streaming via signed URLs)
+  # API service waits for this to complete before starting.
+  minio-init:
+    image: minio/mc:latest
+    container_name: ios-lms-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        mc mb --ignore-existing local/ios-lms-certificates
+        mc mb --ignore-existing local/ios-lms-media
+        mc mb --ignore-existing local/ios-lms-videos
+        mc anonymous set download local/ios-lms-certificates
+        mc anonymous set none     local/ios-lms-media
+        mc anonymous set none     local/ios-lms-videos
+        echo "MinIO buckets ready: certificates(public) media(private) videos(private)"
+    networks:
+      - ios-lms-net
+    restart: "no"
+
   # ─── NestJS API (hot-reload dev) ──────────────────────────────────────────
   api:
     build:
@@ -82,6 +143,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     ports:
       - "${PORT:-3000}:3000"
       - "${WS_PORT:-3001}:3001"
@@ -104,10 +167,19 @@ services:
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-sk_test_mock}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-whsec_mock}
       SENDGRID_API_KEY: ${SENDGRID_API_KEY:-SG.mock}
-      DO_SPACES_ENDPOINT: ${DO_SPACES_ENDPOINT:-https://nyc3.digitaloceanspaces.com}
-      DO_SPACES_BUCKET: ${DO_SPACES_BUCKET:-ios-lms-assets}
-      DO_SPACES_KEY: ${DO_SPACES_KEY:-mock_key}
-      DO_SPACES_SECRET: ${DO_SPACES_SECRET:-mock_secret}
+      # ── Storage (dev: MinIO; prod: swap to DO Spaces) ──────────────────
+      # ENDPOINT is the address the API uses (docker-network for dev).
+      # PUBLIC_URL is what we hand back to clients (browser-accessible). They
+      # differ in dev because minio:9000 isn't resolvable from the browser;
+      # in prod both point at the same DO Spaces hostname.
+      DO_SPACES_ENDPOINT: ${DO_SPACES_ENDPOINT:-http://minio:9000}
+      DO_SPACES_PUBLIC_URL: ${DO_SPACES_PUBLIC_URL:-http://localhost:9000}
+      DO_SPACES_REGION: ${DO_SPACES_REGION:-us-east-1}
+      DO_SPACES_KEY: ${DO_SPACES_KEY:-minioadmin}
+      DO_SPACES_SECRET: ${DO_SPACES_SECRET:-minioadmin}
+      DO_SPACES_BUCKET_CERTIFICATES: ${DO_SPACES_BUCKET_CERTIFICATES:-ios-lms-certificates}
+      DO_SPACES_BUCKET_MEDIA: ${DO_SPACES_BUCKET_MEDIA:-ios-lms-media}
+      DO_SPACES_BUCKET_VIDEOS: ${DO_SPACES_BUCKET_VIDEOS:-ios-lms-videos}
       DEFAULT_LOCALE: ${DEFAULT_LOCALE:-en}
       SUPPORTED_LOCALES: ${SUPPORTED_LOCALES:-en,tr,fr,es,ar,de}
     volumes:
@@ -148,3 +220,4 @@ networks:
 volumes:
   postgres-data:
   redis-data:
+  minio-data:

@@ -16,10 +16,23 @@ export const validationSchema = Joi.object({
   STRIPE_SECRET_KEY: Joi.string().required(),
   STRIPE_WEBHOOK_SECRET: Joi.string().required(),
   SENDGRID_API_KEY: Joi.string().required(),
-  DO_SPACES_ENDPOINT: Joi.string().required(),
-  DO_SPACES_BUCKET: Joi.string().required(),
+
+  // ── Storage (S3-compatible: MinIO in dev, DO Spaces in prod) ──────────
+  DO_SPACES_ENDPOINT: Joi.string().uri().required(),
+  // What we return to clients. In prod, equal to DO_SPACES_ENDPOINT. In dev
+  // with MinIO, differs (browser-reachable vs docker-network-reachable).
+  DO_SPACES_PUBLIC_URL: Joi.string().uri().required(),
+  DO_SPACES_REGION: Joi.string().default('us-east-1'),
   DO_SPACES_KEY: Joi.string().required(),
   DO_SPACES_SECRET: Joi.string().required(),
+  // Three explicit buckets per the SoT §6.5 + architecture study §2.6. The
+  // older single DO_SPACES_BUCKET variable is intentionally removed — every
+  // bucket has different access semantics (public-read vs auth vs signed)
+  // so collapsing them into one was misleading.
+  DO_SPACES_BUCKET_CERTIFICATES: Joi.string().required(),
+  DO_SPACES_BUCKET_MEDIA: Joi.string().required(),
+  DO_SPACES_BUCKET_VIDEOS: Joi.string().required(),
+
   DEFAULT_LOCALE: Joi.string().default('en'),
   SUPPORTED_LOCALES: Joi.string().default('en,tr,fr,es,ar,de'),
 

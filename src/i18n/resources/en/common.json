@@ -1,0 +1,8 @@
+{
+  "direction": {
+    "ltr": "ltr",
+    "rtl": "rtl"
+  },
+  "ok": "OK",
+  "fallback_used": "This response was rendered in English because the requested locale has no translation for one or more fields."
+}

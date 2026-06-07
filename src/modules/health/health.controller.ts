@@ -11,11 +11,15 @@ import { Public } from '../auth/decorators';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { AdminRole } from '../../database/entities';
+import { StorageService } from '../storage/storage.service';
 
 @ApiTags('health')
 @Controller('health')
 export class HealthController {
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly storage: StorageService,
+  ) {}
 
   /**
    * Public liveness probe. Returns 200 with basic process info if the
@@ -72,11 +76,23 @@ export class HealthController {
       dbStatus = 'error';
     }
 
+    const storageBuckets = await this.storage.healthCheck();
+    const storageStatus = Object.values(storageBuckets).every(Boolean)
+      ? 'ok'
+      : 'degraded';
+
+    const overall =
+      dbStatus === 'ok' && storageStatus === 'ok' ? 'ok' : 'degraded';
+
     return {
-      status: dbStatus === 'ok' ? 'ok' : 'degraded',
+      status: overall,
       services: {
         database: dbStatus,
-        // Redis + external service checks added in Week 7 (BE-040)
+        storage: {
+          status: storageStatus,
+          buckets: storageBuckets,
+        },
+        // Redis + Stripe + SendGrid checks added in Week 7 (BE-040)
       },
       version: process.env.npm_package_version ?? '0.0.1',
       uptime: Math.floor(process.uptime()),

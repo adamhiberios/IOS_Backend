@@ -3,7 +3,6 @@ import { Test, TestingModuleBuilder } from '@nestjs/testing';
 import cookieParser from 'cookie-parser';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../../../src/app.module';
-import { GlobalExceptionFilter } from '../../../src/common/filters/global-exception.filter';
 
 export interface BuildTestAppOptions {
   /**
@@ -53,7 +52,11 @@ export async function buildTestApp(
       transformOptions: { enableImplicitConversion: true },
     }),
   );
-  app.useGlobalFilters(new GlobalExceptionFilter());
+  // GlobalExceptionFilter is registered via APP_FILTER in AppModule, which
+  // routes Nest's DI to inject I18nService correctly. Do NOT also call
+  // `app.useGlobalFilters(new GlobalExceptionFilter())` — that bypasses DI
+  // and produces an instance with `i18n = undefined`, which masks the real
+  // filter and crashes at the first localised response.
 
   await app.init();
   return app;
