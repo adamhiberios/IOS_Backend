@@ -11,7 +11,30 @@ async function bootstrap() {
   });
 
   // -- Security headers --
-  app.use(helmet());
+  // Helmet's default CSP forbids inline scripts (`script-src 'self'`), which
+  // breaks Swagger UI's bundled inline bootstrap. When Swagger is enabled we
+  // relax CSP to allow inline scripts/styles. Swagger should only ever be on
+  // in non-prod or explicit-opt-in dev environments, so this is a deliberate
+  // dev-only relaxation, not a prod weakening.
+  const swaggerEnabled =
+    process.env.NODE_ENV !== 'production' ||
+    process.env.ENABLE_SWAGGER === 'true';
+  if (swaggerEnabled) {
+    app.use(
+      helmet({
+        contentSecurityPolicy: {
+          directives: {
+            ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+            'script-src': ["'self'", "'unsafe-inline'"],
+            'script-src-attr': ["'unsafe-inline'"],
+            'img-src': ["'self'", 'data:', 'https:'],
+          },
+        },
+      }),
+    );
+  } else {
+    app.use(helmet());
+  }
 
   // -- Trust proxy --
   // Production runs behind a single trusted load balancer / reverse proxy
@@ -43,13 +66,7 @@ async function bootstrap() {
   });
 
   // -- Swagger --
-  // Enabled when NODE_ENV != production OR when ENABLE_SWAGGER=true. The
-  // explicit flag lets the dev environment (which runs with NODE_ENV=production
-  // to keep all safety validations active) still expose /api/docs without
-  // accidentally turning it on in real production.
-  const swaggerEnabled =
-    process.env.NODE_ENV !== 'production' ||
-    process.env.ENABLE_SWAGGER === 'true';
+  // `swaggerEnabled` was already computed above to feed the CSP decision.
   if (swaggerEnabled) {
     const config = new DocumentBuilder()
       .setTitle('IOS LMS API')
