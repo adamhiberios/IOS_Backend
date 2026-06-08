@@ -28,6 +28,11 @@ async function bootstrap() {
             'script-src': ["'self'", "'unsafe-inline'"],
             'script-src-attr': ["'unsafe-inline'"],
             'img-src': ["'self'", 'data:', 'https:'],
+            // Drop upgrade-insecure-requests: dev is served over plain HTTP
+            // (no TLS yet), so forcing HTTPS sub-resource loads breaks every
+            // Swagger UI asset with ERR_SSL_PROTOCOL_ERROR. Re-enable once
+            // the API sits behind a TLS terminator (Caddy / Cloudflare).
+            'upgrade-insecure-requests': null,
           },
         },
       }),
