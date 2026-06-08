@@ -66,6 +66,9 @@ API_IMAGE=ghcr.io/adamhiberios/ios_backend:dev
 APP_ENV=dev
 HOST_PORT=3001
 
+# --- enable Swagger on dev only (prod leaves this unset) ---
+ENABLE_SWAGGER=true
+
 # --- app ---
 NODE_ENV=production
 PORT=3000

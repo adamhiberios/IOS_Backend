@@ -42,8 +42,15 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // -- Swagger (staging + dev only) --
-  if (process.env.NODE_ENV !== 'production') {
+  // -- Swagger --
+  // Enabled when NODE_ENV != production OR when ENABLE_SWAGGER=true. The
+  // explicit flag lets the dev environment (which runs with NODE_ENV=production
+  // to keep all safety validations active) still expose /api/docs without
+  // accidentally turning it on in real production.
+  const swaggerEnabled =
+    process.env.NODE_ENV !== 'production' ||
+    process.env.ENABLE_SWAGGER === 'true';
+  if (swaggerEnabled) {
     const config = new DocumentBuilder()
       .setTitle('IOS LMS API')
       .setDescription('Institute of Scrum LMS Backend API - v1')
@@ -72,7 +79,7 @@ async function bootstrap() {
   console.log(
     `IOS LMS API listening on :${port} [${process.env.NODE_ENV ?? 'development'}]`,
   );
-  if (process.env.NODE_ENV !== 'production') {
+  if (swaggerEnabled) {
     console.log(`Swagger docs: http://localhost:${port}/api/docs`);
   }
 }

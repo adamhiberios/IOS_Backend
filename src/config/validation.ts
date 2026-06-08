@@ -89,6 +89,11 @@ export const validationSchema = Joi.object({
   // root; dev sets `dev` → objects at `dev/...`). Empty / unset = no prefix.
   STORAGE_KEY_PREFIX: Joi.string().allow('').default(''),
 
+  // Opt-in Swagger UI. Independent of NODE_ENV so dev (which also runs with
+  // NODE_ENV=production to keep all safety validations active) can still
+  // expose /api/docs. Prod leaves this unset → no Swagger.
+  ENABLE_SWAGGER: Joi.string().valid('true', 'false').default('false'),
+
   DEFAULT_LOCALE: Joi.string().default('en'),
   SUPPORTED_LOCALES: Joi.string().default('en,tr,fr,es,ar,de'),
 
