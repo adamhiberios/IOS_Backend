@@ -41,6 +41,14 @@ export class StorageService implements OnModuleInit {
   private readonly endpoint: string;
   private readonly publicBaseUrl: string;
   private readonly buckets: Record<BucketKind, string>;
+  /**
+   * Optional prefix prepended to every S3 key for both writes and reads.
+   * Lets multiple environments share the same buckets without colliding:
+   *   prod → STORAGE_KEY_PREFIX='' → objects at `<bucket>/<key>`
+   *   dev  → STORAGE_KEY_PREFIX='dev' → objects at `<bucket>/dev/<key>`
+   * Callers always supply the unprefixed key; the prefix is invisible to them.
+   */
+  private readonly keyPrefix: string;
 
   /** Default signed-URL lifetime when callers don't supply their own. */
   static readonly DEFAULT_SIGNED_URL_TTL = 3600; // 1 hour
@@ -62,6 +70,13 @@ export class StorageService implements OnModuleInit {
         'DO_SPACES_BUCKET_VIDEOS',
       ),
     };
+
+    // Normalise prefix: strip surrounding slashes so we control the join.
+    this.keyPrefix = (this.config.get<string>('STORAGE_KEY_PREFIX', '') ?? '')
+      .replace(/^\/+|\/+$/g, '');
+    if (this.keyPrefix) {
+      this.logger.log(`Storage key prefix active: '${this.keyPrefix}/'`);
+    }
 
     this.s3 = new S3Client({
       endpoint: this.endpoint,
@@ -109,7 +124,7 @@ export class StorageService implements OnModuleInit {
     const result = await this.s3.send(
       new PutObjectCommand({
         Bucket: bucket,
-        Key: key,
+        Key: this.applyPrefix(key),
         Body: body,
         ContentType: opts.contentType,
         CacheControl: opts.cacheControl,
@@ -125,6 +140,7 @@ export class StorageService implements OnModuleInit {
             expiresInSeconds: StorageService.DEFAULT_SIGNED_URL_TTL,
           });
 
+    // Callers persist the unprefixed key in our DB; the prefix is internal.
     return { bucket, key, url, etag: result.ETag };
   }
 
@@ -141,7 +157,7 @@ export class StorageService implements OnModuleInit {
         `Bucket '${kind}' is not public-read; use getSignedUrl() to mint a signed URL.`,
       );
     }
-    return `${this.publicBaseUrl}/${this.buckets[kind]}/${this.normalizeKey(key)}`;
+    return `${this.publicBaseUrl}/${this.buckets[kind]}/${this.applyPrefix(key)}`;
   }
 
   /**
@@ -156,7 +172,7 @@ export class StorageService implements OnModuleInit {
   ): Promise<string> {
     const cmd = new GetObjectCommand({
       Bucket: this.buckets[kind],
-      Key: key,
+      Key: this.applyPrefix(key),
       ResponseContentDisposition: opts.contentDisposition,
     });
     const signed = await getSignedUrl(this.s3, cmd, {
@@ -177,7 +193,7 @@ export class StorageService implements OnModuleInit {
   ): Promise<string> {
     const cmd = new PutObjectCommand({
       Bucket: this.buckets[kind],
-      Key: key,
+      Key: this.applyPrefix(key),
       ContentType: opts.contentType,
     });
     const signed = await getSignedUrl(this.s3, cmd, {
@@ -192,7 +208,7 @@ export class StorageService implements OnModuleInit {
     await this.s3.send(
       new DeleteObjectCommand({
         Bucket: this.buckets[kind],
-        Key: key,
+        Key: this.applyPrefix(key),
       }),
     );
   }
@@ -202,7 +218,7 @@ export class StorageService implements OnModuleInit {
       await this.s3.send(
         new HeadObjectCommand({
           Bucket: this.buckets[kind],
-          Key: key,
+          Key: this.applyPrefix(key),
         }),
       );
       return true;
@@ -272,6 +288,17 @@ export class StorageService implements OnModuleInit {
 
   private normalizeKey(key: string): string {
     return key.replace(/^\/+/, '');
+  }
+
+  /**
+   * Prepend the configured environment prefix to a caller-supplied key.
+   * When no prefix is configured (prod), returns the normalised key unchanged.
+   * Idempotent: calling with an already-prefixed key would double-prefix, so
+   * keep this internal-only — callers must always pass the unprefixed key.
+   */
+  private applyPrefix(key: string): string {
+    const normalised = this.normalizeKey(key);
+    return this.keyPrefix ? `${this.keyPrefix}/${normalised}` : normalised;
   }
 
   /**

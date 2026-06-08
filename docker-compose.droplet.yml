@@ -1,35 +1,33 @@
 # =============================================================================
-# IOS LMS — DigitalOcean Droplet deployment
+# IOS LMS — DigitalOcean Droplet deployment (parameterized for multi-env)
 #
-# This compose file runs ONLY the api container on the Droplet.
-# Postgres, Redis (Valkey), and object storage are all DigitalOcean managed
-# services — the api connects to them over the VPC private network.
+# Lives at /opt/ios-lms/<env>/docker-compose.yml on the Droplet, one per env
+# (prod, dev). Each env has its own sibling .env file that supplies:
 #
-# Lives at /opt/ios-lms/docker-compose.yml on the Droplet.
+#   APP_ENV         e.g. 'prod' or 'dev' (cosmetic — labels containers, etc.)
+#   HOST_PORT       host port to bind (3000 for prod, 3001 for dev)
+#   API_IMAGE       full GHCR image reference (set/updated by deploy workflow)
+#   plus all the app env vars (DATABASE_URL, REDIS_URL, JWT_SECRET, ...)
 #
-# Reads ./env from the same directory. That .env file is created once by hand
-# (NOT committed) and contains all secrets + the GHCR image tag.
+# Deploy commands (run from /opt/ios-lms/<env>/):
+#   docker compose -p ios-lms-${APP_ENV} pull
+#   docker compose -p ios-lms-${APP_ENV} up -d
 #
-# Deploy lifecycle (from GitHub Actions):
-#   docker login ghcr.io ...
-#   docker compose pull
-#   docker compose up -d
+# The `-p` project flag namespaces the stack so prod and dev coexist on the
+# same Droplet without colliding on networks, volumes, or container names.
 # =============================================================================
 
 services:
   api:
-    image: ${API_IMAGE:?API_IMAGE must be set, e.g. ghcr.io/<owner>/ios-lms-api:latest}
-    container_name: ios-lms-api
+    image: ${API_IMAGE:?API_IMAGE must be set, e.g. ghcr.io/<owner>/ios-lms-api:sha-xxxxx}
+    container_name: ios-lms-api-${APP_ENV:?APP_ENV must be set (prod|dev)}
     restart: always
-    # Pull all config from the .env file next to this compose file.
     env_file:
       - ./.env
-    # Bind to host port 3000. No reverse proxy yet — the Droplet firewall
-    # decides who can reach it. When you add a domain + TLS later, switch
-    # this to 127.0.0.1:3000 and let Caddy/Nginx terminate TLS in front.
+    # Bind to host port from .env. Prod uses 3000, dev uses 3001 — the
+    # container itself always listens on 3000 internally.
     ports:
-      - "3000:3000"
-    # Resource limits sized for a basic Droplet. Tune up if you upgrade.
+      - "${HOST_PORT:?HOST_PORT must be set}:3000"
     deploy:
       resources:
         limits:

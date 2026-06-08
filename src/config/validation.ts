@@ -84,6 +84,10 @@ export const validationSchema = Joi.object({
   DO_SPACES_BUCKET_CERTIFICATES: Joi.string().required(),
   DO_SPACES_BUCKET_MEDIA: Joi.string().required(),
   DO_SPACES_BUCKET_VIDEOS: Joi.string().required(),
+  // Optional key prefix prepended to every S3 object path. Used to share the
+  // same buckets across environments (e.g. prod uses no prefix → objects at
+  // root; dev sets `dev` → objects at `dev/...`). Empty / unset = no prefix.
+  STORAGE_KEY_PREFIX: Joi.string().allow('').default(''),
 
   DEFAULT_LOCALE: Joi.string().default('en'),
   SUPPORTED_LOCALES: Joi.string().default('en,tr,fr,es,ar,de'),

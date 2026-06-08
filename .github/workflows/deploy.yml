@@ -1,31 +1,46 @@
 # =============================================================================
-# IOS LMS API — Build, push to GHCR, deploy to Droplet
+# IOS LMS API — Manual deploy to prod or dev on the shared Droplet
 #
-# Runs on every push to `main` and on manual dispatch.
+# Trigger this from GitHub Actions UI: Actions tab → "Deploy" → "Run workflow"
+# Choose:
+#   environment: prod | dev   (which stack to deploy to)
+#   ref:         branch / tag / SHA to build from (defaults to repo default)
 #
-# Job 1 (build-push): builds the multi-stage Docker image, tags it with both
-#   `latest` and the commit SHA, pushes to ghcr.io.
-# Job 2 (deploy): SSHs into the Droplet, writes API_IMAGE into the runtime
-#   .env, runs `docker compose pull && up -d`. Then curls /health to verify.
+# Both prod and dev are MANUAL — there is no push-triggered auto-deploy.
+# This is deliberate: the only way to ship is to consciously pick a ref + env.
 #
-# Required repository secrets (Settings -> Secrets and variables -> Actions):
-#   DROPLET_HOST          public IP or hostname of the Droplet
-#   DROPLET_USER          SSH user with docker permissions (e.g. `deploy`)
-#   DROPLET_SSH_KEY       private OpenSSH key authorised on the Droplet
+# What it does:
+#   1. Checks out the chosen ref
+#   2. Builds the multi-stage Docker image (target=runner)
+#   3. Pushes to ghcr.io/<owner>/<repo>:sha-<short> and :<environment>
+#   4. SSHes into the Droplet, copies the compose file to /opt/ios-lms/<env>/,
+#      updates API_IMAGE in /opt/ios-lms/<env>/.env, restarts the stack
+#   5. Curls the health endpoint on the env's port (3000 prod, 3001 dev)
 #
-# GHCR auth: uses GITHUB_TOKEN with `packages: write` permission below.
-# No PAT needed for the same repo.
+# Required repo secrets: DROPLET_HOST, DROPLET_USER, DROPLET_SSH_KEY
+# Required repo permissions: contents:read, packages:write (GHCR push)
 # =============================================================================
 
 name: Deploy
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        type: choice
+        required: true
+        options:
+          - dev
+          - prod
+        default: dev
+      ref:
+        description: 'Branch, tag, or SHA to deploy (defaults to current branch)'
+        type: string
+        required: false
 
 concurrency:
-  group: deploy-${{ github.ref }}
+  group: deploy-${{ inputs.environment }}
   cancel-in-progress: false
 
 env:
@@ -39,11 +54,13 @@ jobs:
       contents: read
       packages: write
     outputs:
-      image: ${{ steps.meta.outputs.tags }}
       sha_tag: ${{ steps.sha.outputs.tag }}
+      image_name: ${{ steps.img.outputs.name }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -63,15 +80,6 @@ jobs:
         id: sha
         run: echo "tag=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ steps.img.outputs.name }}
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,format=short
-
       - name: Build and push image
         uses: docker/build-push-action@v6
         with:
@@ -79,8 +87,9 @@ jobs:
           file: ./Dockerfile
           target: runner
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: |
+            ${{ steps.img.outputs.name }}:sha-${{ steps.sha.outputs.tag }}
+            ${{ steps.img.outputs.name }}:${{ inputs.environment }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -90,10 +99,8 @@ jobs:
     steps:
       - name: Checkout (for compose file)
         uses: actions/checkout@v4
-
-      - name: Compute lowercase image name
-        id: img
-        run: echo "name=$(echo 'ghcr.io/${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+        with:
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Add SSH key
         run: |
@@ -102,31 +109,47 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "${{ secrets.DROPLET_HOST }}" >> ~/.ssh/known_hosts
 
+      - name: Ensure env directory exists on Droplet
+        run: |
+          ssh -i ~/.ssh/id_ed25519 \
+            "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}" \
+            "mkdir -p /opt/ios-lms/${{ inputs.environment }}"
+
       - name: Copy compose file to Droplet
         run: |
           scp -i ~/.ssh/id_ed25519 docker-compose.droplet.yml \
-            "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}:/opt/ios-lms/docker-compose.yml"
+            "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}:/opt/ios-lms/${{ inputs.environment }}/docker-compose.yml"
 
       - name: Pull image and restart on Droplet
         env:
-          IMAGE: ${{ steps.img.outputs.name }}:sha-${{ needs.build-push.outputs.sha_tag }}
+          IMAGE: ${{ needs.build-push.outputs.image_name }}:sha-${{ needs.build-push.outputs.sha_tag }}
         run: |
           ssh -i ~/.ssh/id_ed25519 \
             "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}" \
             "set -e; \
-             cd /opt/ios-lms; \
+             cd /opt/ios-lms/${{ inputs.environment }}; \
+             test -f .env || (echo 'ERROR: /opt/ios-lms/${{ inputs.environment }}/.env not found. Create it before deploying.' && exit 1); \
              grep -q '^API_IMAGE=' .env && sed -i 's|^API_IMAGE=.*|API_IMAGE=${IMAGE}|' .env || echo 'API_IMAGE=${IMAGE}' >> .env; \
              echo '${{ secrets.GITHUB_TOKEN }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin; \
-             docker compose pull; \
-             docker compose up -d; \
+             docker compose -p ios-lms-${{ inputs.environment }} pull; \
+             docker compose -p ios-lms-${{ inputs.environment }} up -d; \
              docker image prune -f"
+
+      - name: Determine health-check port
+        id: port
+        run: |
+          if [ "${{ inputs.environment }}" = "prod" ]; then
+            echo "port=3000" >> "$GITHUB_OUTPUT"
+          else
+            echo "port=3001" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Health check
         run: |
           for i in 1 2 3 4 5 6 7 8 9 10; do
-            if curl -fsS --max-time 5 "http://${{ secrets.DROPLET_HOST }}:3000/health"; then
+            if curl -fsS --max-time 5 "http://${{ secrets.DROPLET_HOST }}:${{ steps.port.outputs.port }}/health"; then
               echo
-              echo "Health check passed."
+              echo "Health check passed (${{ inputs.environment }})."
               exit 0
             fi
             echo "Attempt $i failed, retrying in 5s..."
@@ -135,5 +158,5 @@ jobs:
           echo "Health check failed after 10 attempts."
           ssh -i ~/.ssh/id_ed25519 \
             "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}" \
-            "cd /opt/ios-lms && docker compose logs --tail=200 api" || true
+            "cd /opt/ios-lms/${{ inputs.environment }} && docker compose -p ios-lms-${{ inputs.environment }} logs --tail=200 api" || true
           exit 1
