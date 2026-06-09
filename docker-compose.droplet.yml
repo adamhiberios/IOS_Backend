@@ -24,10 +24,12 @@ services:
     restart: always
     env_file:
       - ./.env
-    # Bind to host port from .env. Prod uses 3000, dev uses 3001 — the
-    # container itself always listens on 3000 internally.
+    # Bind to host LOOPBACK only — Caddy (host networking) is the only thing
+    # that needs to reach this port. Public traffic comes in via Cloudflare
+    # → Caddy → 127.0.0.1:<HOST_PORT> → container :3000. Binding to 127.0.0.1
+    # closes off direct internet hits even if UFW is misconfigured.
     ports:
-      - "${HOST_PORT:?HOST_PORT must be set}:3000"
+      - "127.0.0.1:${HOST_PORT:?HOST_PORT must be set}:3000"
     deploy:
       resources:
         limits:
