@@ -8,7 +8,7 @@ import {
   Res,
 } from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
-import { Response } from 'express';
+import type { Response } from 'express';
 import { join } from 'path';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from '../auth/auth.service';
