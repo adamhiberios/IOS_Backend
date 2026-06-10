@@ -1,0 +1,24 @@
+INSTITUTE OF SCRUM
+
+SECURITY NOTICE — New sign-in to your account
+---------------------------------------------
+
+Hi {{firstName}},
+
+We noticed a sign-in to your Institute of Scrum account from a device or location we don't recognize.
+
+  When:   {{loginAt}}
+  Where:  {{location}}
+  IP:     {{ipAddress}}
+  Device: {{userAgent}}
+
+Was this you? No action needed.
+Wasn't you?  Reset your password immediately — that signs every device out and forces re-login.
+
+Reset your password: {{resetUrl}}
+
+If you suspect ongoing abuse, contact us at {{supportEmail}}.
+
+—
+Institute of Scrum
+© {{currentYear}} All rights reserved.

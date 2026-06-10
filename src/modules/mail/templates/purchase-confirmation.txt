@@ -1,0 +1,23 @@
+INSTITUTE OF SCRUM
+
+Payment received — thank you
+----------------------------
+
+Hi {{firstName}},
+
+Your enrollment in {{certTitle}} is confirmed. You can start learning right away.
+
+Receipt
+-------
+Item:        {{certTitle}}
+Transaction: {{transactionId}}
+Date:        {{purchasedAt}}
+Total paid:  {{currency}} {{amount}}
+
+Start learning: {{dashboardUrl}}
+
+Need an invoice with VAT or your company's details? Reply to this email.
+
+—
+Institute of Scrum
+© {{currentYear}} All rights reserved.

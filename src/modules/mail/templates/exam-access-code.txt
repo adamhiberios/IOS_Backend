@@ -1,0 +1,26 @@
+INSTITUTE OF SCRUM
+
+Your exam access code
+---------------------
+
+Hi {{firstName}},
+
+Here's your single-use access code for the {{examTitle}} exam:
+
+    {{accessCode}}
+
+Valid until: {{validUntil}}
+
+Before you start:
+  - The code is single-use — entering it starts your exam clock.
+  - Make sure you have a stable internet connection and quiet space.
+  - Your answers autosave — don't refresh during the exam.
+  - Late submission is allowed for 2 minutes after the timer ends.
+
+Open the exam portal: {{examUrl}}
+
+Lost this email? An admin can re-issue your code. Reply to this message or contact {{supportEmail}}.
+
+—
+Institute of Scrum
+© {{currentYear}} All rights reserved.

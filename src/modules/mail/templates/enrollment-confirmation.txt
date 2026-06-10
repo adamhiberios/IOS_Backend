@@ -1,0 +1,20 @@
+INSTITUTE OF SCRUM
+
+You're enrolled in {{certTitle}}
+--------------------------------
+
+Hi {{firstName}},
+
+Your seat in {{certTitle}} is ready.
+Lead instructor: {{instructor}}
+
+What's next:
+  - Open your dashboard and start Module 1 whenever you're ready.
+  - Modules are self-paced — your progress saves automatically.
+  - When you've completed all modules, an admin will issue your exam access code.
+
+Start Module 1: {{startUrl}}
+
+—
+Institute of Scrum
+© {{currentYear}} All rights reserved.

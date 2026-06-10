@@ -1,0 +1,26 @@
+INSTITUTE OF SCRUM
+
+Welcome, {{firstName}}.
+-----------------------
+
+Your email is verified and your account is ready. The Institute of Scrum is built for practitioners who want endorsement-grade Scrum credentials — without the noise of typical "certification factories."
+
+How it works:
+
+  1. Browse the catalog
+     PSM, PSPO, PSF, and more — all endorsed credentials.
+
+  2. Learn at your pace
+     Modular curriculum with video, reading, and assessed exams.
+
+  3. Earn your certificate
+     Pass the proctored exam and your verifiable certificate is issued automatically.
+
+Browse certifications: {{catalogUrl}}
+Open your dashboard:   {{appUrl}}
+
+Questions? Reply to this email — a human will answer.
+
+—
+Institute of Scrum
+© {{currentYear}} All rights reserved.

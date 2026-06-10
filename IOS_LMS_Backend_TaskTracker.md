@@ -3,7 +3,7 @@
 **Repo:** https://github.com/adamhiberios/IOS_Backend  
 **Stack:** NestJS · PostgreSQL 15 · TypeORM · Redis · Angular Universal  
 **Total weeks:** 10 | **Total tasks:** 46  
-**Last updated:** 2026-05-22 · Weeks 1, 2, 3, 4 complete · Week 5 (Payment + Enrollment) is next
+**Last updated:** 2026-06-08 · Weeks 1, 2, 3, 4 complete · deployment/CI-CD infra pulled forward from Week 10 (partial) · Week 5 (Payment + Enrollment) is next
 
 ---
 
@@ -185,6 +185,21 @@ Plumbing only — content sweep (full Tr/Fr/Es/Ar/De catalogues, 54 email templa
 
 ---
 
+## Deployment / CI-CD infrastructure pass 🔄 PARTIAL (landed 2026-06-08, pulled forward from Week 10)
+
+Infra plumbing pulled ahead so Weeks 1–4 could be exercised on a live environment. This covers part of Week 10's GAP-002 (CI/CD pipeline) and GAP-003 (DO infra) — see those rows for what remains.
+
+| Area | Delivered |
+|---|---|
+| GitHub Actions `deploy.yml` | Manual `workflow_dispatch` pipeline (inputs: `environment` prod\|dev, `ref`). Builds image, pushes to `ghcr.io/<owner>/<repo>:sha-<short>` + `:<environment>`, then SSHes to the Droplet, copies the droplet compose file, and runs `docker compose -p ios-lms-<env> pull && up -d`. Concurrency-grouped per environment. **No auto-rollback yet** (GAP-002 remainder). |
+| Multi-env on shared Droplet | `docker-compose.droplet.yml` + `scripts/droplet-multi-env-migrate.sh` run prod and dev stacks side-by-side on one Droplet under separate compose project names (`ios-lms-prod` / `ios-lms-dev`), each with its own `/opt/ios-lms/<env>/.env`. |
+| Droplet provisioning scripts | `scripts/droplet-bootstrap.sh` (host setup) + `scripts/droplet-lockdown.sh` (hardening). **PgBouncer not yet provisioned** (GAP-003 remainder) — pool max=10 still enforced app-side in `typeorm.config.ts`. |
+| Swagger gating | `ENABLE_SWAGGER` env flag (`src/config/validation.ts`) opts `/api/docs` in per environment; `main.ts` wires it and relaxes CSP only when Swagger is enabled so the UI renders over HTTP. |
+| Docs | `docs/DEPLOYMENT.md` (full deploy runbook) · `SECURITY_REVIEW.md` (security review writeup). |
+| Cleanup | Removed obsolete `docker-compose.prod.yml` and the standalone Nginx config in favour of the droplet compose flow. |
+
+---
+
 ## Week 5 — Payment, promo codes, enrollment ⬜
 
 | ID | Task | Priority | Status |
@@ -245,8 +260,8 @@ Plumbing only — content sweep (full Tr/Fr/Es/Ar/De catalogues, 54 email templa
 |----|------|----------|--------|
 | GAP-001 unit | Jest 100% on Auth, Exam, TestSession, Gateway, Payment, Cert services | 🔴 | ⬜ |
 | GAP-001 integration | Supertest + real PG/Redis full flow tests including reuse detection | 🔴 | ⬜ |
-| GAP-002 | GitHub Actions pipeline with auto-rollback | 🔴 | ⬜ |
-| GAP-003 | DO infra provisioning + PgBouncer | 🔴 | ⬜ |
+| GAP-002 | GitHub Actions pipeline with auto-rollback | 🔴 | 🔄 (manual GHCR build + droplet deploy live; auto-rollback pending) |
+| GAP-003 | DO infra provisioning + PgBouncer | 🔴 | 🔄 (droplet bootstrap/lockdown/multi-env scripts done; PgBouncer pending) |
 | GAP-014 | Swagger live since Week 2; AsyncAPI spec for WS events to add | 🔴 | ⬜ (partial) |
 | BE-039 | DR runbook + test snapshot restore | 🟡 | ⬜ |
 | BE-043 | Smoke test suite — /health, /verify, /redis/ping, WS handshake | 🔵 | ⬜ |

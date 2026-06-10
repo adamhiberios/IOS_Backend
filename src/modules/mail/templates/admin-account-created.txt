@@ -1,0 +1,23 @@
+INSTITUTE OF SCRUM
+
+STAFF ACCOUNT — {{role}}
+========================
+
+Hi {{firstName}},
+
+A colleague has provisioned an admin account for you on the Institute of Scrum platform with the role {{role}}.
+
+  Email:              {{email}}
+  Temporary password: {{tempPassword}}
+
+>>> CHANGE THIS PASSWORD ON FIRST LOGIN <<<
+
+Your account is in "must change password" mode — you won't be able to access admin functions until you set your own password.
+
+Log in: {{loginUrl}}
+
+If you weren't expecting this — or if you don't recognize who would have created this account — do NOT log in. Reply to this email immediately so we can disable the account.
+
+—
+Institute of Scrum
+© {{currentYear}} All rights reserved.

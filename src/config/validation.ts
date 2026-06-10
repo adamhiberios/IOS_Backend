@@ -15,6 +15,15 @@ const KNOWN_DEV_JWT_SECRETS = [
 // lethal in prod.
 const KNOWN_MOCK_KEYS = ['sk_test_mock', 'whsec_mock', 'SG.mock'];
 
+// Well-known dev-default S3 / object-storage credentials (MinIO defaults that
+// ship as `:-` fallbacks in docker-compose.yml). Must never reach production.
+const KNOWN_DEV_STORAGE_CREDS = ['minioadmin'];
+
+// Well-known dev-default Postgres password baked into the DATABASE_URL
+// fallback (`postgresql://ios:iospass@...`). If it appears in the connection
+// string in production, refuse to boot.
+const KNOWN_DEV_DB_PASSWORD = 'iospass';
+
 export const validationSchema = Joi.object({
   NODE_ENV: Joi.string()
     .valid('development', 'staging', 'production', 'test')
@@ -22,7 +31,20 @@ export const validationSchema = Joi.object({
   PORT: Joi.number().default(3000),
   WS_PORT: Joi.number().default(3001),
   APP_BASE_URL: Joi.string().uri().required(),
-  DATABASE_URL: Joi.string().required(),
+  DATABASE_URL: Joi.string()
+    .required()
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.string()
+        .pattern(new RegExp(`:${KNOWN_DEV_DB_PASSWORD}@`), {
+          name: 'dev-db-password',
+          invert: true,
+        })
+        .messages({
+          'string.pattern.invert.base':
+            'DATABASE_URL uses the well-known dev Postgres password. Set a real POSTGRES_PASSWORD before deploying to production.',
+        }),
+    }),
   REDIS_URL: Joi.string().required(),
   JWT_SECRET: Joi.string()
     .min(32)
@@ -68,6 +90,10 @@ export const validationSchema = Joi.object({
       is: 'production',
       then: Joi.string().invalid(...KNOWN_MOCK_KEYS),
     }),
+  // From-address used for all outbound mail. Must be a sender SendGrid has
+  // verified (Single Sender Verification or Domain Authentication). Defaulted
+  // to a sentinel domain so we never silently spoof a real one.
+  MAIL_FROM_ADDRESS: Joi.string().email().default('no-reply@invalid.local'),
 
   // ── Storage (S3-compatible: MinIO in dev, DO Spaces in prod) ──────────
   DO_SPACES_ENDPOINT: Joi.string().uri().required(),
@@ -75,8 +101,28 @@ export const validationSchema = Joi.object({
   // with MinIO, differs (browser-reachable vs docker-network-reachable).
   DO_SPACES_PUBLIC_URL: Joi.string().uri().required(),
   DO_SPACES_REGION: Joi.string().default('us-east-1'),
-  DO_SPACES_KEY: Joi.string().required(),
-  DO_SPACES_SECRET: Joi.string().required(),
+  DO_SPACES_KEY: Joi.string()
+    .required()
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.string()
+        .invalid(...KNOWN_DEV_STORAGE_CREDS)
+        .messages({
+          'any.invalid':
+            'DO_SPACES_KEY is set to a well-known dev default (minioadmin). Set real object-storage credentials before deploying to production.',
+        }),
+    }),
+  DO_SPACES_SECRET: Joi.string()
+    .required()
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.string()
+        .invalid(...KNOWN_DEV_STORAGE_CREDS)
+        .messages({
+          'any.invalid':
+            'DO_SPACES_SECRET is set to a well-known dev default (minioadmin). Set real object-storage credentials before deploying to production.',
+        }),
+    }),
   // Three explicit buckets per the SoT §6.5 + architecture study §2.6. The
   // older single DO_SPACES_BUCKET variable is intentionally removed — every
   // bucket has different access semantics (public-read vs auth vs signed)

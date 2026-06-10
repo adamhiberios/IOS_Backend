@@ -7,6 +7,12 @@ import { IssuedCertificate } from './issued-certificate.entity';
 import { Transaction } from './transaction.entity';
 import type { Translations } from '../../common/i18n/types';
 
+export enum CertLevel {
+  FOUNDATION = 'foundation',
+  PRACTITIONER = 'practitioner',
+  AUTHORITY = 'authority',
+}
+
 @Entity('certificates')
 export class Certificate extends UuidEntity {
   /**
@@ -48,6 +54,26 @@ export class Certificate extends UuidEntity {
 
   @Column({ type: 'varchar', length: 500, nullable: true })
   thumbnailUrl?: string | null;
+
+  /** Shield/badge graphic shown on catalog cards (distinct from thumbnailUrl). */
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  badgeImageUrl?: string | null;
+
+  /** Certification track — e.g. "Scrum Master", "Product Owner", "Scrum Facilitator". */
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  track?: string | null;
+
+  /** Mastery tier shown on catalog cards. */
+  @Column({ type: 'enum', enum: CertLevel, nullable: true })
+  level?: CertLevel | null;
+
+  /** Estimated study hours displayed on catalog cards (e.g. 20). */
+  @Column({ type: 'int', nullable: true })
+  durationHours?: number | null;
+
+  /** URL to a downloadable syllabus / brochure PDF. */
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  syllabusUrl?: string | null;
 
   @OneToMany(() => LearningModule, (m) => m.certificate)
   learningModules?: LearningModule[];

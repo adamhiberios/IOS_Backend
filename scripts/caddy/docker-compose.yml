@@ -1,0 +1,44 @@
+# =============================================================================
+# IOS LMS — Caddy reverse proxy (in front of prod + dev API containers)
+#
+# Lives at /opt/ios-lms/caddy/docker-compose.yml on the Droplet.
+#
+# Uses host networking so Caddy listens on the Droplet's :80 + :443 directly
+# and can reach the prod/dev containers via localhost:3000 / localhost:3001
+# without joining their docker networks. Simplest topology for a single-Droplet
+# setup.
+#
+# Expects two files alongside this compose:
+#   ./Caddyfile      — site config
+#   ./origin.crt     — Cloudflare Origin CA certificate (PEM)
+#   ./origin.key     — Cloudflare Origin CA private key (PEM)
+#
+# Start:
+#   cd /opt/ios-lms/caddy
+#   docker compose -p ios-lms-caddy up -d
+#
+# Reload config without restarting the container:
+#   docker exec ios-lms-caddy caddy reload --config /etc/caddy/Caddyfile
+# =============================================================================
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: ios-lms-caddy
+    restart: always
+    network_mode: host
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./origin.crt:/etc/caddy/origin.crt:ro
+      - ./origin.key:/etc/caddy/origin.key:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  caddy-data:
+  caddy-config:

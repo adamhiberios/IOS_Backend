@@ -1,0 +1,18 @@
+INSTITUTE OF SCRUM
+
+Confirm your email
+------------------
+
+Hi {{firstName}},
+
+Welcome to the Institute of Scrum. To finish setting up your account, please confirm your email address.
+
+Verify here: {{verificationUrl}}
+
+This link expires in {{expiresInHours}} hours.
+
+If you didn't create an account, you can safely ignore this email — no account was created.
+
+—
+Institute of Scrum
+© {{currentYear}} All rights reserved.

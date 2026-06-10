@@ -1,0 +1,36 @@
+INSTITUTE OF SCRUM
+
+{{#if passed}}
+PASSED
+======
+
+Congratulations, {{firstName}}.
+
+You passed the {{examTitle}} exam. Your certificate is being generated and will land in your inbox shortly.
+
+  Your score:    {{score}}/100
+  Passing score: {{passingScore}}/100
+
+View certificate: {{certificateUrl}}
+{{/if}}{{#unless passed}}
+NOT PASSED
+==========
+
+Hi {{firstName}},
+
+Your score on the {{examTitle}} exam didn't meet the passing threshold this time. The good news: the curriculum doesn't go anywhere, and you can retake the exam after a brief cool-down period.
+
+  Your score:    {{score}}/100
+  Passing score: {{passingScore}}/100
+
+Next steps:
+  - Review the modules where you'd like to strengthen your understanding.
+  - Request a new access code from an admin when you're ready.
+  - Many candidates pass on their second attempt — don't be discouraged.
+
+Review the curriculum: {{retryUrl}}
+{{/unless}}
+
+—
+Institute of Scrum
+© {{currentYear}} All rights reserved.

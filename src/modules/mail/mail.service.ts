@@ -27,7 +27,14 @@ export class MailService {
   constructor(private readonly config: ConfigService) {
     const env = this.config.get<string>('NODE_ENV');
     this.isProd = env === 'production' || env === 'staging';
-    this.fromAddress = 'no-reply@ios-lms.com';
+    // From-address comes from env so prod and dev can use distinct sender
+    // identities on the same SendGrid account (e.g. noreply@ vs noreply-dev@).
+    // Falls back to a safe sentinel that SendGrid will reject loudly if it
+    // ever escapes — preferable to silently sending from a domain we don't own.
+    this.fromAddress = this.config.get<string>(
+      'MAIL_FROM_ADDRESS',
+      'no-reply@invalid.local',
+    );
 
     const apiKey = this.config.get<string>('SENDGRID_API_KEY');
     if (this.isProd && apiKey && apiKey !== 'SG.mock') {

@@ -1,0 +1,22 @@
+INSTITUTE OF SCRUM
+
+CERTIFICATE ISSUED
+==================
+
+Hi {{firstName}},
+
+Your {{certTitle}} certificate has been issued. It's verifiable by anyone using the link below.
+
+  Serial:    {{serialNumber}}
+  Issued to: {{fullName}}
+  For:       {{certTitle}}
+  Date:      {{issuedAt}}
+
+Download PDF:      {{certificateUrl}}
+Public verify URL: {{verifyUrl}}
+
+Add this credential to your LinkedIn profile, your CV, and your email signature. The verify link is permanent — anyone who clicks it confirms the certificate is genuine, who issued it, and when.
+
+—
+Institute of Scrum
+© {{currentYear}} All rights reserved.
