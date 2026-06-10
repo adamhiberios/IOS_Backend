@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import sgMail from '@sendgrid/mail';
+import { renderTemplate, TemplateVars } from './template.renderer';
 
 export interface EmailParams {
   to: string;
@@ -74,6 +75,23 @@ export class MailService {
   }
 
   // ── Convenience builders ─────────────────────────────────────────────────
+  // Each builder loads the matching template pair from ./templates and renders
+  // the tokens. Adding a new email type is: drop two files in /templates and
+  // add a builder method here.
+
+  /** Build an EmailParams from a template name + token bag. */
+  private fromTemplate(
+    template: string,
+    toEmail: string,
+    subject: string,
+    vars: TemplateVars,
+  ): EmailParams {
+    const { html, text } = renderTemplate(template, {
+      toEmail,
+      ...vars,
+    });
+    return { to: toEmail, subject, text, html };
+  }
 
   buildVerificationEmail(
     toEmail: string,
@@ -81,17 +99,17 @@ export class MailService {
     token: string,
     appBaseUrl: string,
   ): EmailParams {
-    const link = `${appBaseUrl}/verify-email?token=${token}`;
-    return {
-      to: toEmail,
-      subject: 'Verify your IOS account',
-      text: `Hi ${fullName},\n\nClick the link below to verify your email:\n${link}\n\nThis link expires in 24 hours.\n\n— IOS Team`,
-      html: `<p>Hi ${escapeHtml(fullName)},</p>
-<p>Click the link below to verify your email:</p>
-<p><a href="${link}">${link}</a></p>
-<p>This link expires in 24 hours.</p>
-<p>— IOS Team</p>`,
-    };
+    const firstName = fullName.split(' ')[0] || fullName;
+    return this.fromTemplate(
+      'email-verification',
+      toEmail,
+      'Verify your Institute of Scrum account',
+      {
+        firstName,
+        verificationUrl: `${appBaseUrl}/verify-email?token=${token}`,
+        expiresInHours: 24,
+      },
+    );
   }
 
   buildPasswordResetEmail(
@@ -100,25 +118,17 @@ export class MailService {
     token: string,
     appBaseUrl: string,
   ): EmailParams {
-    const link = `${appBaseUrl}/reset-password?token=${token}`;
-    return {
-      to: toEmail,
-      subject: 'Reset your IOS password',
-      text: `Hi ${fullName},\n\nClick the link below to reset your password:\n${link}\n\nThis link expires in 1 hour. If you did not request a reset, ignore this email.\n\n— IOS Team`,
-      html: `<p>Hi ${escapeHtml(fullName)},</p>
-<p>Click the link below to reset your password:</p>
-<p><a href="${link}">${link}</a></p>
-<p>This link expires in 1 hour. If you did not request a reset, ignore this email.</p>
-<p>— IOS Team</p>`,
-    };
+    const firstName = fullName.split(' ')[0] || fullName;
+    return this.fromTemplate(
+      'password-reset',
+      toEmail,
+      'Reset your Institute of Scrum password',
+      {
+        firstName,
+        resetUrl: `${appBaseUrl}/reset-password?token=${token}`,
+        expiresInHours: 1,
+        supportEmail: this.fromAddress,
+      },
+    );
   }
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
 }
