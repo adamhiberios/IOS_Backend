@@ -24,18 +24,25 @@ export class MailService {
   private readonly logger = new Logger(MailService.name);
   private readonly isProd: boolean;
   private readonly fromAddress: string;
+  private readonly frontendBaseUrl: string;
 
   constructor(private readonly config: ConfigService) {
     const env = this.config.get<string>('NODE_ENV');
     this.isProd = env === 'production' || env === 'staging';
     // From-address comes from env so prod and dev can use distinct sender
     // identities on the same SendGrid account (e.g. noreply@ vs noreply-dev@).
-    // Falls back to a safe sentinel that SendGrid will reject loudly if it
-    // ever escapes — preferable to silently sending from a domain we don't own.
     this.fromAddress = this.config.get<string>(
       'MAIL_FROM_ADDRESS',
       'no-reply@invalid.local',
     );
+
+    // Frontend URL — what email links point at. When a real web frontend
+    // ships, set FRONTEND_BASE_URL to it and recipients land on the frontend
+    // page instead of the API's built-in /verify-email + /reset-password.
+    this.frontendBaseUrl = (
+      this.config.get<string>('FRONTEND_BASE_URL') ||
+      this.config.getOrThrow<string>('APP_BASE_URL')
+    ).replace(/\/+$/, '');
 
     const apiKey = this.config.get<string>('SENDGRID_API_KEY');
     if (this.isProd && apiKey && apiKey !== 'SG.mock') {
@@ -93,11 +100,16 @@ export class MailService {
     return { to: toEmail, subject, text, html };
   }
 
+  /**
+   * Build the verification email. `_appBaseUrl` is accepted for backward
+   * compatibility with callers but ignored — the email URL always uses
+   * FRONTEND_BASE_URL (or APP_BASE_URL fallback) read at construction time.
+   */
   buildVerificationEmail(
     toEmail: string,
     fullName: string,
     token: string,
-    appBaseUrl: string,
+    _appBaseUrl?: string,
   ): EmailParams {
     const firstName = fullName.split(' ')[0] || fullName;
     return this.fromTemplate(
@@ -106,7 +118,7 @@ export class MailService {
       'Verify your Institute of Scrum account',
       {
         firstName,
-        verificationUrl: `${appBaseUrl}/verify-email?token=${token}`,
+        verificationUrl: `${this.frontendBaseUrl}/verify-email?token=${token}`,
         expiresInHours: 24,
       },
     );
@@ -116,7 +128,7 @@ export class MailService {
     toEmail: string,
     fullName: string,
     token: string,
-    appBaseUrl: string,
+    _appBaseUrl?: string,
   ): EmailParams {
     const firstName = fullName.split(' ')[0] || fullName;
     return this.fromTemplate(
@@ -125,7 +137,7 @@ export class MailService {
       'Reset your Institute of Scrum password',
       {
         firstName,
-        resetUrl: `${appBaseUrl}/reset-password?token=${token}`,
+        resetUrl: `${this.frontendBaseUrl}/reset-password?token=${token}`,
         expiresInHours: 1,
         supportEmail: this.fromAddress,
       },

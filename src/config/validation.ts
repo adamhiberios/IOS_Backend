@@ -31,6 +31,12 @@ export const validationSchema = Joi.object({
   PORT: Joi.number().default(3000),
   WS_PORT: Joi.number().default(3001),
   APP_BASE_URL: Joi.string().uri().required(),
+  // URL of the web frontend that hosts user-facing pages like /verify-email
+  // and /reset-password. Used in email links. Defaults to APP_BASE_URL so v1
+  // (no separate frontend) keeps working — the API serves the pages itself
+  // via WebModule. When a real frontend ships, point this at it and the
+  // server-rendered pages become unused.
+  FRONTEND_BASE_URL: Joi.string().uri().optional(),
   DATABASE_URL: Joi.string()
     .required()
     .when('NODE_ENV', {

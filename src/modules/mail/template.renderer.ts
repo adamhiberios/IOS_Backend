@@ -57,7 +57,7 @@ function renderTokens(
 }
 
 /**
- * Load and render a template pair. Returns the HTML + text bodies.
+ * Load and render a template pair (HTML + text). Mail templates only.
  * The renderer auto-injects `currentYear` so every template footer is consistent
  * without callers passing it in.
  */
@@ -81,4 +81,22 @@ export function renderTemplate(
     // Text mode: no escaping — recipients see the raw value.
     text: renderTokens(renderConditionals(text, merged), merged, false),
   };
+}
+
+/**
+ * Render a single HTML file (no plain-text pair). Used by WebModule for
+ * user-facing verify / reset pages. `templateDir` is the absolute directory
+ * containing the .html file.
+ */
+export function renderHtml(
+  templateDir: string,
+  name: string,
+  vars: TemplateVars = {},
+): string {
+  const html = readFileSync(join(templateDir, `${name}.html`), 'utf8');
+  const merged: TemplateVars = {
+    currentYear: new Date().getFullYear(),
+    ...vars,
+  };
+  return renderTokens(renderConditionals(html, merged), merged, true);
 }

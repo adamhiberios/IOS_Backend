@@ -22,6 +22,7 @@ import { CatalogModule } from './modules/catalog/catalog.module';
 import { LearningModule } from './modules/learning/learning.module';
 import { RedisModule } from './modules/redis/redis.module';
 import { ExamModule } from './modules/exam/exam.module';
+import { WebModule } from './modules/web/web.module';
 
 @Module({
   imports: [
@@ -75,6 +76,7 @@ import { ExamModule } from './modules/exam/exam.module';
     CatalogModule,
     LearningModule,
     ExamModule,
+    WebModule,
   ],
   providers: [
     // Global error handler (RFC 7807)

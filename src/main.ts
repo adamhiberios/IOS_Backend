@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
+import { urlencoded } from 'express';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -57,7 +58,18 @@ async function bootstrap() {
   app.use(cookieParser());
 
   // -- API prefix --
-  app.setGlobalPrefix('api/v1', { exclude: ['health'] });
+  // Web pages (verify-email, reset-password) live at the root because email
+  // links don't carry the /api/v1 prefix. Add new web routes to this list
+  // when you add them.
+  app.setGlobalPrefix('api/v1', {
+    exclude: ['health', 'verify-email', 'reset-password'],
+  });
+
+  // -- URL-encoded form body parsing --
+  // The /reset-password form on the WebController submits as
+  // application/x-www-form-urlencoded. Express's default body parser only
+  // handles JSON; enable urlencoded parsing for the form to work.
+  app.use(urlencoded({ extended: false }));
 
   // -- CORS --
   app.enableCors({
