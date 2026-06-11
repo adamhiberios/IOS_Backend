@@ -4,6 +4,7 @@ import {
   HttpException,
   HttpStatus,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import type { Response, Request } from 'express';
 import { I18nContext, I18nService } from 'nestjs-i18n';
@@ -38,7 +39,12 @@ function buildI18nMock() {
       key: string,
       opts?: { lang?: string; args?: Record<string, unknown> },
     ) => {
-      const argSuffix = opts?.args ? `|${JSON.stringify(opts.args)}` : '';
+      // Only surface args when there are actual values — the filter passes
+      // an empty {} for argless exceptions, which is semantically "no args".
+      const argSuffix =
+        opts?.args && Object.keys(opts.args).length > 0
+          ? `|${JSON.stringify(opts.args)}`
+          : '';
       return `[${opts?.lang ?? '?'}]${key}${argSuffix}`;
     },
   );
@@ -192,7 +198,6 @@ describe('GlobalExceptionFilter', () => {
   });
 
   it('preserves the original message for a manually-thrown UnauthorizedException', async () => {
-    const { UnauthorizedException } = await import('@nestjs/common');
     await filter.catch(
       new UnauthorizedException('Email not verified. Check your inbox.'),
       buildHost(req, res),

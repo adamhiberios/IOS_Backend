@@ -112,11 +112,11 @@ export class TestSessionService {
   async consumeGrace(
     sessionId: string,
   ): Promise<Record<string, string> | null> {
-    const key = `${EXAM_GRACE_PREFIX}${sessionId}`;
-    const data = await this.redis.getJson<{ snapshot: Record<string, string> }>(
-      key,
-    );
-    if (data) await this.redis.del(key);
+    // GETDEL — truly atomic. The previous GET-then-DEL let two concurrent
+    // late-submits both read the snapshot (H2, audit 2026-06-11).
+    const data = await this.redis.getDelJson<{
+      snapshot: Record<string, string>;
+    }>(`${EXAM_GRACE_PREFIX}${sessionId}`);
     return data?.snapshot ?? null;
   }
 

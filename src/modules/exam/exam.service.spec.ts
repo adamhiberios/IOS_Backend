@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import { NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { ExamService } from './exam.service';
 import { TestSessionService } from './test-session.service';
@@ -33,6 +34,25 @@ const mockTestSessionRepo = {
 const mockAttemptRepo = {
   create: jest.fn(),
   save: jest.fn(),
+};
+// C2 — scoreAndPersist runs in its own RLS-scoped QueryRunner transaction.
+const mockRunnerManager = {
+  save: jest.fn(),
+  update: jest.fn(),
+};
+const mockQueryRunner = {
+  connect: jest.fn(),
+  startTransaction: jest.fn(),
+  commitTransaction: jest.fn(),
+  rollbackTransaction: jest.fn(),
+  release: jest.fn(),
+  query: jest.fn(),
+  manager: mockRunnerManager,
+  isTransactionActive: true,
+  isReleased: false,
+};
+const mockDataSource = {
+  createQueryRunner: jest.fn(() => mockQueryRunner),
 };
 const mockTestSessionSvc = {
   start: jest.fn(),
@@ -84,6 +104,7 @@ describe('ExamService', () => {
         { provide: getRepositoryToken(ExamAccessCode), useValue: mockAccessCodeRepo },
         { provide: getRepositoryToken(TestSession), useValue: mockTestSessionRepo },
         { provide: getRepositoryToken(ExamAttempt), useValue: mockAttemptRepo },
+        { provide: DataSource, useValue: mockDataSource },
         { provide: TestSessionService, useValue: mockTestSessionSvc },
       ],
     }).compile();
@@ -205,5 +226,149 @@ describe('ExamService', () => {
     const result = await service.scoreAnswers('exam-1', { 'q-1': 'opt-a' });
     expect(result.score).toBe(100);
     expect(result.passed).toBe(true);
+  });
+
+  // ── submitExam / scoreAndPersist (C2 — RLS-scoped persistence) ─────────────
+
+  describe('submitExam — RLS-scoped persistence', () => {
+    beforeEach(() => {
+      mockTestSessionRepo.findOne.mockResolvedValue({ ...mockSession });
+      mockExamRepo.findOne.mockResolvedValue({
+        ...mockExam,
+        questions: [
+          { id: 'q-1', options: [{ id: 'opt-a', isCorrect: true }] },
+        ],
+      });
+      mockAttemptRepo.create.mockImplementation((d) => d);
+      mockRunnerManager.update.mockResolvedValue({ affected: 1 });
+      mockTestSessionSvc.deleteSession.mockResolvedValue(undefined);
+    });
+
+    it('persists the attempt inside a transaction with app.current_user_id set', async () => {
+      const result = await service.submitExam('sess-1', 'user-1', {
+        'q-1': 'opt-a',
+      });
+
+      expect(mockDataSource.createQueryRunner).toHaveBeenCalled();
+      expect(mockQueryRunner.connect).toHaveBeenCalled();
+      expect(mockQueryRunner.startTransaction).toHaveBeenCalled();
+      // set_config must run BEFORE the insert, with the session owner's id.
+      expect(mockQueryRunner.query).toHaveBeenCalledWith(
+        expect.stringContaining(`set_config('app.current_user_id', $1, true)`),
+        ['user-1'],
+      );
+      expect(mockRunnerManager.save).toHaveBeenCalledWith(
+        ExamAttempt,
+        expect.objectContaining({
+          userId: 'user-1',
+          examId: 'exam-1',
+          status: AttemptStatus.SUBMITTED,
+          lateFlag: false,
+        }),
+      );
+      // H4: conditional transition — criteria constrains current status.
+      expect(mockRunnerManager.update).toHaveBeenCalledWith(
+        TestSession,
+        expect.objectContaining({ id: 'sess-1' }),
+        expect.objectContaining({ status: TestSessionStatus.SUBMITTED }),
+      );
+      // Order: set_config → conditional update → attempt insert.
+      const queryOrder = mockQueryRunner.query.mock.invocationCallOrder[0];
+      const updateOrder = mockRunnerManager.update.mock.invocationCallOrder[0];
+      const saveOrder = mockRunnerManager.save.mock.invocationCallOrder[0];
+      expect(queryOrder).toBeLessThan(updateOrder);
+      expect(updateOrder).toBeLessThan(saveOrder);
+
+      expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
+      expect(mockQueryRunner.release).toHaveBeenCalled();
+      expect(mockTestSessionSvc.deleteSession).toHaveBeenCalledWith('sess-1');
+      // Legacy direct-repo writes must NOT be used (they bypass the RLS GUC).
+      expect(mockAttemptRepo.save).not.toHaveBeenCalled();
+      expect(mockTestSessionRepo.update).not.toHaveBeenCalled();
+      expect(result.score).toBe(100);
+      expect(result.passed).toBe(true);
+    });
+
+    it('rolls back and releases the runner when the insert fails', async () => {
+      mockRunnerManager.save.mockRejectedValueOnce(new Error('insert failed'));
+
+      await expect(
+        service.submitExam('sess-1', 'user-1', { 'q-1': 'opt-a' }),
+      ).rejects.toThrow('insert failed');
+
+      expect(mockQueryRunner.rollbackTransaction).toHaveBeenCalled();
+      expect(mockQueryRunner.commitTransaction).not.toHaveBeenCalled();
+      expect(mockQueryRunner.release).toHaveBeenCalled();
+      expect(mockTestSessionSvc.deleteSession).not.toHaveBeenCalled();
+    });
+
+    it('H4 — throws Conflict and inserts no attempt when another submit won the race', async () => {
+      mockRunnerManager.update.mockResolvedValue({ affected: 0 });
+
+      await expect(
+        service.submitExam('sess-1', 'user-1', { 'q-1': 'opt-a' }),
+      ).rejects.toThrow(ConflictException);
+
+      expect(mockRunnerManager.save).not.toHaveBeenCalled();
+      expect(mockQueryRunner.rollbackTransaction).toHaveBeenCalled();
+      expect(mockQueryRunner.commitTransaction).not.toHaveBeenCalled();
+      expect(mockQueryRunner.release).toHaveBeenCalled();
+    });
+  });
+
+  // ── lateSubmitExam (H3 — ownership before grace consume) ───────────────────
+
+  describe('lateSubmitExam', () => {
+    const expiredSession = {
+      ...mockSession,
+      status: TestSessionStatus.EXPIRED,
+    };
+
+    beforeEach(() => {
+      mockExamRepo.findOne.mockResolvedValue({
+        ...mockExam,
+        questions: [
+          { id: 'q-1', options: [{ id: 'opt-a', isCorrect: true }] },
+        ],
+      });
+      mockAttemptRepo.create.mockImplementation((d) => d);
+      mockRunnerManager.update.mockResolvedValue({ affected: 1 });
+      mockTestSessionSvc.deleteSession.mockResolvedValue(undefined);
+    });
+
+    it('H3 — rejects a non-owner BEFORE consuming the grace key', async () => {
+      mockTestSessionRepo.findOne.mockResolvedValue(expiredSession); // owned by user-1
+
+      await expect(
+        service.lateSubmitExam('sess-1', 'attacker-9', { 'q-1': 'opt-a' }),
+      ).rejects.toThrow(ForbiddenException);
+
+      // The victim's grace window must remain intact.
+      expect(mockTestSessionSvc.consumeGrace).not.toHaveBeenCalled();
+    });
+
+    it('consumes grace and persists a lateFlag attempt for the owner', async () => {
+      mockTestSessionRepo.findOne.mockResolvedValue(expiredSession);
+      mockTestSessionSvc.consumeGrace.mockResolvedValue({ 'q-1': 'opt-a' });
+
+      const result = await service.lateSubmitExam('sess-1', 'user-1', {});
+
+      expect(mockTestSessionSvc.consumeGrace).toHaveBeenCalledWith('sess-1');
+      expect(mockRunnerManager.save).toHaveBeenCalledWith(
+        ExamAttempt,
+        expect.objectContaining({ lateFlag: true, userId: 'user-1' }),
+      );
+      expect(result.score).toBe(100);
+    });
+
+    it('rejects when the grace window has closed', async () => {
+      mockTestSessionRepo.findOne.mockResolvedValue(expiredSession);
+      mockTestSessionSvc.consumeGrace.mockResolvedValue(null);
+
+      await expect(
+        service.lateSubmitExam('sess-1', 'user-1', {}),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockRunnerManager.save).not.toHaveBeenCalled();
+    });
   });
 });

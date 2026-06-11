@@ -6,8 +6,8 @@ import {
   ForbiddenException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull } from 'typeorm';
+import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
+import { Repository, IsNull, In, DataSource } from 'typeorm';
 import * as crypto from 'crypto';
 import * as bcrypt from 'bcrypt';
 
@@ -60,6 +60,9 @@ export class ExamService {
 
     @InjectRepository(ExamAttempt)
     private readonly attemptRepo: Repository<ExamAttempt>,
+
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
 
     private readonly testSessionSvc: TestSessionService,
   ) {}
@@ -284,7 +287,16 @@ export class ExamService {
     userId: string,
     answers: Record<string, string>,
   ): Promise<ScoreResult> {
-    // Grace window check — consumeGrace atomically deletes the grace key.
+    // Ownership + status check MUST run before the grace key is consumed —
+    // consuming first let any authenticated student destroy another student's
+    // grace window (DEL fires no expiry event → no auto-submit, attempt lost
+    // forever). (H3, audit 2026-06-11)
+    const session = await this.getOwnedSession(sessionId, userId, [
+      TestSessionStatus.EXPIRED,
+    ]);
+
+    // Grace window check — consumeGrace atomically deletes the grace key
+    // (GETDEL), so concurrent late-submits cannot both pass this gate.
     const graceSnapshot = await this.testSessionSvc.consumeGrace(sessionId);
     if (graceSnapshot === null) {
       throw new ForbiddenException(
@@ -296,9 +308,6 @@ export class ExamService {
     const finalAnswers =
       Object.keys(answers).length > 0 ? answers : graceSnapshot;
 
-    const session = await this.getOwnedSession(sessionId, userId, [
-      TestSessionStatus.EXPIRED,
-    ]);
     return this.scoreAndPersist(
       session,
       finalAnswers,
@@ -338,6 +347,13 @@ export class ExamService {
       await this.scoreAndPersist(session, answers, AttemptStatus.AUTO_SUBMITTED, false);
       this.logger.log(`Auto-submitted session ${sessionId}`);
     } catch (err) {
+      if (err instanceof ConflictException) {
+        // A manual (late-)submit won the race — nothing to do.
+        this.logger.debug(
+          `Auto-submit skipped for session ${sessionId}: already submitted`,
+        );
+        return;
+      }
       this.logger.error(
         `Auto-submit failed for session ${sessionId}: ${(err as Error).message}`,
       );
@@ -391,36 +407,74 @@ export class ExamService {
 
     const submittedAt = new Date();
 
-    // Persist the attempt.
-    await this.attemptRepo.save(
-      this.attemptRepo.create({
-        userId: session.userId,
-        examId: session.examId,
-        certId: this.resolveCertId(session),
-        score,
-        passed,
-        answers,
-        durationSeconds: Math.round(
-          (submittedAt.getTime() - session.startedAt.getTime()) / 1000,
-        ),
-        startedAt: session.startedAt,
-        submittedAt,
-        status,
-        lateFlag,
-      }),
-    );
+    const attempt = this.attemptRepo.create({
+      userId: session.userId,
+      examId: session.examId,
+      certId: this.resolveCertId(session),
+      score,
+      passed,
+      answers,
+      durationSeconds: Math.round(
+        (submittedAt.getTime() - session.startedAt.getTime()) / 1000,
+      ),
+      startedAt: session.startedAt,
+      submittedAt,
+      status,
+      lateFlag,
+    });
 
-    // Update session status.
     const newStatus =
       status === AttemptStatus.AUTO_SUBMITTED
         ? TestSessionStatus.AUTO_SUBMITTED
         : TestSessionStatus.SUBMITTED;
 
-    await this.testSessionRepo.update(session.id, {
-      status: newStatus,
-      submittedAt,
-      snapshot: answers,
-    });
+    // exam_attempts has ENABLE + FORCE ROW LEVEL SECURITY: the INSERT must run
+    // inside a transaction where app.current_user_id is set, or it fails with
+    // 42501 under any non-BYPASSRLS role (C2, audit 2026-06-11). We cannot use
+    // req.rlsRunner here — the keyspace auto-submit path has no request
+    // context — so this opens its own short-lived, transaction-scoped runner.
+    // The session-status update rides in the same transaction for atomicity.
+    const runner = this.dataSource.createQueryRunner();
+    await runner.connect();
+    await runner.startTransaction();
+    try {
+      await runner.query(
+        `SELECT set_config('app.current_user_id', $1, true)`,
+        [String(session.userId)],
+      );
+
+      // Conditional state transition FIRST — only one submitter can move the
+      // session out of ACTIVE/EXPIRED. Double-click submits and submit-vs-
+      // auto-submit races lose here instead of inserting a duplicate attempt
+      // (H4, audit 2026-06-11).
+      const transition = await runner.manager.update(
+        TestSession,
+        {
+          id: session.id,
+          status: In([TestSessionStatus.ACTIVE, TestSessionStatus.EXPIRED]),
+        },
+        {
+          status: newStatus,
+          submittedAt,
+          snapshot: answers,
+        },
+      );
+      if (transition.affected !== 1) {
+        throw new ConflictException('Session has already been submitted');
+      }
+
+      await runner.manager.save(ExamAttempt, attempt);
+      await runner.commitTransaction();
+    } catch (err) {
+      if (runner.isTransactionActive) {
+        await runner.rollbackTransaction();
+      }
+      throw err;
+    } finally {
+      if (!runner.isReleased) {
+        await runner.release();
+      }
+    }
 
     // Delete Redis key (only relevant if the session was still alive).
     await this.testSessionSvc.deleteSession(session.id);

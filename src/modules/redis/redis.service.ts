@@ -31,16 +31,38 @@ export class RedisService {
    * exam countdown.
    */
   async setJsonKeepTtl(key: string, value: unknown): Promise<boolean> {
-    // Guard: only write if key is still alive to avoid phantom writes.
-    const pttl = await this.client.pttl(key);
-    if (pttl <= 0) return false;
-    await this.client.set(key, JSON.stringify(value), 'KEEPTTL');
-    return true;
+    // Single atomic command: XX = only write if the key still exists.
+    // The previous PTTL-check-then-SET had a race where the key could expire
+    // between the two commands and SET KEEPTTL would recreate it WITHOUT a
+    // TTL — an immortal session key (H1, audit 2026-06-11).
+    const result = await this.client.set(
+      key,
+      JSON.stringify(value),
+      'KEEPTTL',
+      'XX',
+    );
+    return result === 'OK';
   }
 
   /** GET and deserialize. Returns `null` if the key is absent or expired. */
   async getJson<T>(key: string): Promise<T | null> {
     const raw = await this.client.get(key);
+    if (raw === null) return null;
+    try {
+      return JSON.parse(raw) as T;
+    } catch (err) {
+      this.logger.error(`Failed to parse JSON for key ${key}`, err);
+      return null;
+    }
+  }
+
+  /**
+   * Atomically GET and DELETE (single GETDEL command, Redis ≥ 6.2).
+   * Returns `null` if the key is absent. Unlike GET-then-DEL, two concurrent
+   * callers can never both receive the value (H2, audit 2026-06-11).
+   */
+  async getDelJson<T>(key: string): Promise<T | null> {
+    const raw = await this.client.getdel(key);
     if (raw === null) return null;
     try {
       return JSON.parse(raw) as T;

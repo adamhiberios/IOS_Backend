@@ -8,11 +8,27 @@ import {
   Res,
 } from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { join } from 'path';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from '../auth/auth.service';
+import { Public } from '../auth/decorators';
 import { renderHtml } from '../mail/template.renderer';
+
+// Same budget as the JSON auth endpoints (5 req/60s in prod, relaxed in
+// tests). Without this, the HTML form rode the default 100/min tier — 20×
+// more token-guessing budget on the same consumeAuthToken mechanism (M10,
+// audit 2026-06-11).
+const AUTH_THROTTLE = {
+  auth: {
+    limit:
+      process.env.NODE_ENV === 'test'
+        ? Number(process.env.TEST_THROTTLE_AUTH_LIMIT ?? 100_000)
+        : 5,
+    ttl: 60_000,
+  },
+};
 
 /**
  * HTML pages served at the root path — reachable from email links.
@@ -26,6 +42,7 @@ import { renderHtml } from '../mail/template.renderer';
  * in main.ts. The controller is hidden from Swagger via @ApiExcludeController.
  */
 @ApiExcludeController()
+@Public() // Email-link pages — must bypass the global JwtAuthGuard (C1, audit 2026-06-11)
 @Controller()
 export class WebController {
   private readonly pagesDir = join(__dirname, 'pages');
@@ -43,6 +60,7 @@ export class WebController {
   // ── /verify-email ────────────────────────────────────────────────────────
 
   @Get('verify-email')
+  @Throttle(AUTH_THROTTLE) // consumes a one-time token — auth-tier budget
   async verifyEmail(
     @Query('token') token: string | undefined,
     @Res() res: Response,
@@ -97,6 +115,7 @@ export class WebController {
   }
 
   @Post('reset-password')
+  @Throttle(AUTH_THROTTLE) // consumes a one-time token — auth-tier budget
   @HttpCode(200)
   async resetPasswordSubmit(
     @Body() body: { token?: string; newPassword?: string; confirmPassword?: string },

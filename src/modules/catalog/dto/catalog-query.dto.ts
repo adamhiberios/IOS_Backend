@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
   IsIn,
@@ -40,7 +40,16 @@ export class CatalogQueryDto {
     example: true,
   })
   @IsOptional()
-  @Type(() => Boolean)
+  // NOT @Type(() => Boolean): Boolean('false') === true, which silently
+  // flipped ?active=false to true (H6, audit 2026-06-11). Strict parse —
+  // anything other than 'true'/'false' falls through to @IsBoolean and 400s.
+  @Transform(({ value }) =>
+    value === 'true' || value === true
+      ? true
+      : value === 'false' || value === false
+        ? false
+        : value,
+  )
   @IsBoolean()
   active?: boolean;
 

@@ -198,10 +198,24 @@ export class AuthService {
       throw new UnauthorizedException('Refresh token invalid');
     }
 
-    await this.refreshTokens.update(
+    // First-writer-wins: only the request that actually flips revokedAt may
+    // mint new tokens. Without the affected check, two concurrent refreshes
+    // with the same cookie both passed the revokedAt read above and both got
+    // fresh token pairs — bypassing reuse detection exactly in its attack
+    // window (H5, audit 2026-06-11). The loser is treated as reuse.
+    const revoked = await this.refreshTokens.update(
       { id: stored.id, revokedAt: IsNull() },
       { revokedAt: new Date() },
     );
+    if (revoked.affected !== 1) {
+      this.logger.warn(
+        `Concurrent refresh-token use detected for ${payload.type} id=${payload.sub}. Revoking all sessions.`,
+      );
+      await this.revokeAllRefreshTokens(payload.sub, payload.type);
+      throw new UnauthorizedException(
+        'Session invalidated. Please log in again.',
+      );
+    }
 
     if (payload.type === 'admin') {
       const admin = await this.admins.findOne({ where: { id: payload.sub } });

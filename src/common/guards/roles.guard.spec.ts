@@ -85,4 +85,29 @@ describe('RolesGuard', () => {
       guard.canActivate(buildContext({ role: AdminRole.CONTENT_CREATOR })),
     ).toBe(true);
   });
+
+  // H7 (audit 2026-06-11): exact-match RBAC — branch separation.
+
+  it('H7 — finance_admin cannot access content_creator-required routes', () => {
+    const guard = new RolesGuard(
+      buildReflector([AdminRole.CONTENT_CREATOR, AdminRole.LEARNING_ADMIN]),
+    );
+    expect(() =>
+      guard.canActivate(buildContext({ role: AdminRole.FINANCE_ADMIN })),
+    ).toThrow(ForbiddenException);
+  });
+
+  it('H7 — learning_admin does NOT implicitly pass routes that only list content_creator', () => {
+    const guard = new RolesGuard(buildReflector([AdminRole.CONTENT_CREATOR]));
+    expect(() =>
+      guard.canActivate(buildContext({ role: AdminRole.LEARNING_ADMIN })),
+    ).toThrow(ForbiddenException);
+  });
+
+  it('H7 — super_admin override passes every check', () => {
+    const guard = new RolesGuard(buildReflector([AdminRole.FINANCE_ADMIN]));
+    expect(
+      guard.canActivate(buildContext({ role: AdminRole.SUPER_ADMIN })),
+    ).toBe(true);
+  });
 });

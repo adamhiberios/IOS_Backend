@@ -476,6 +476,30 @@ describe('AuthService', () => {
       expect((revokeAllCall![0] as { userId: string }).userId).toBe(USER_UUID);
     });
 
+    it('H5 — concurrent refresh: loser of the revoke race gets 401 and all sessions revoked', async () => {
+      refreshTokens.findOne.mockResolvedValue(
+        buildRefreshToken({ tokenHash: storedHash }), // revokedAt null at read time
+      );
+      // Conditional revoke affected 0 → another request already rotated it.
+      refreshTokens.update.mockResolvedValue({
+        affected: 0,
+        raw: [],
+        generatedMaps: [],
+      });
+
+      await expect(service.refresh(payload, rawToken)).rejects.toThrow(
+        /Session invalidated/,
+      );
+
+      // Must cascade a revoke-all for the user (reuse semantics).
+      const revokeAllCall = refreshTokens.update.mock.calls.find(
+        ([w]) => typeof w === 'object' && w !== null && 'userId' in w,
+      );
+      expect(revokeAllCall).toBeDefined();
+      // And must NOT mint new tokens.
+      expect(refreshTokens.save).not.toHaveBeenCalled();
+    });
+
     it('rejects refresh when bcrypt hash does not match', async () => {
       refreshTokens.findOne.mockResolvedValue(
         buildRefreshToken({ tokenHash: '$2b$04$different.hash.entirely' }),

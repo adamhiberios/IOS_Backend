@@ -57,7 +57,6 @@ describe('StorageService', () => {
 
   it('throws at construction time if a required env var is missing', () => {
     const broken = buildConfig({});
-    delete (broken.getOrThrow as jest.Mock).mock; // no-op cosmetics
     (broken.getOrThrow as jest.Mock).mockImplementation((k: string) => {
       if (k === 'DO_SPACES_BUCKET_MEDIA') throw new Error('missing DO_SPACES_BUCKET_MEDIA');
       return ENV[k];

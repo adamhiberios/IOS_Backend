@@ -5,6 +5,7 @@ import { REDIS_CLIENT } from './redis.constants';
 const mockClient = {
   set: jest.fn(),
   get: jest.fn(),
+  getdel: jest.fn(),
   del: jest.fn(),
   pttl: jest.fn(),
   ping: jest.fn(),
@@ -39,25 +40,45 @@ describe('RedisService', () => {
 
   // ── setJsonKeepTtl ───────────────────────────────────────────────────────
 
-  it('setJsonKeepTtl — writes and returns true when key is alive', async () => {
-    mockClient.pttl.mockResolvedValue(50_000);
+  it('setJsonKeepTtl — single atomic SET with KEEPTTL + XX, returns true on OK', async () => {
     mockClient.set.mockResolvedValue('OK');
     const result = await service.setJsonKeepTtl('k', { a: 1 });
     expect(result).toBe(true);
-    expect(mockClient.set).toHaveBeenCalledWith('k', JSON.stringify({ a: 1 }), 'KEEPTTL');
+    expect(mockClient.set).toHaveBeenCalledWith(
+      'k',
+      JSON.stringify({ a: 1 }),
+      'KEEPTTL',
+      'XX',
+    );
+    // H1: must NOT pre-check PTTL — the check-then-set race could recreate
+    // an expired key without a TTL.
+    expect(mockClient.pttl).not.toHaveBeenCalled();
   });
 
-  it('setJsonKeepTtl — returns false and skips SET when key is expired (pttl = -2)', async () => {
-    mockClient.pttl.mockResolvedValue(-2);
+  it('setJsonKeepTtl — returns false when key no longer exists (XX → null)', async () => {
+    mockClient.set.mockResolvedValue(null);
     const result = await service.setJsonKeepTtl('k', { a: 1 });
     expect(result).toBe(false);
-    expect(mockClient.set).not.toHaveBeenCalled();
   });
 
-  it('setJsonKeepTtl — returns false when pttl = 0', async () => {
-    mockClient.pttl.mockResolvedValue(0);
-    const result = await service.setJsonKeepTtl('k', { a: 1 });
-    expect(result).toBe(false);
+  // ── getDelJson ───────────────────────────────────────────────────────────
+
+  it('getDelJson — atomically GETDELs and deserializes', async () => {
+    mockClient.getdel.mockResolvedValue(JSON.stringify({ snapshot: { q: 'a' } }));
+    const val = await service.getDelJson<{ snapshot: Record<string, string> }>('k');
+    expect(val).toEqual({ snapshot: { q: 'a' } });
+    expect(mockClient.getdel).toHaveBeenCalledWith('k');
+    expect(mockClient.del).not.toHaveBeenCalled();
+  });
+
+  it('getDelJson — returns null when key is absent', async () => {
+    mockClient.getdel.mockResolvedValue(null);
+    expect(await service.getDelJson('k')).toBeNull();
+  });
+
+  it('getDelJson — returns null on malformed JSON', async () => {
+    mockClient.getdel.mockResolvedValue('not-json{{{');
+    expect(await service.getDelJson('k')).toBeNull();
   });
 
   // ── getJson ──────────────────────────────────────────────────────────────

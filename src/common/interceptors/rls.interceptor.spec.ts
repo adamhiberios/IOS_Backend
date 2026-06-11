@@ -102,9 +102,13 @@ describe('RlsInterceptor', () => {
     expect(adminCall![1]).toEqual([ADMIN_UUID]);
   });
 
-  it('uses x-forwarded-for header when present', async () => {
+  it('uses req.ip (trust-proxy validated) and ignores the raw x-forwarded-for header', async () => {
+    // Since the trust-proxy fix, the interceptor reads Express's `req.ip`
+    // (hop-count validated) — never the spoofable raw header. The header here
+    // is a decoy: it must NOT win over req.ip.
     const req: Partial<RlsRequest> = {
-      headers: { 'x-forwarded-for': '203.0.113.5, 10.0.0.1' },
+      ip: '203.0.113.5',
+      headers: { 'x-forwarded-for': '198.51.100.99' },
       user: { id: USER_UUID, type: 'student' },
       socket: { remoteAddress: '127.0.0.1' } as RlsRequest['socket'],
     };
@@ -118,6 +122,23 @@ describe('RlsInterceptor', () => {
       ([sql]) => typeof sql === 'string' && sql.includes('current_ip'),
     );
     expect(ipCall![1]).toEqual(['203.0.113.5']);
+  });
+
+  it('falls back to socket.remoteAddress when req.ip is unset', async () => {
+    const req: Partial<RlsRequest> = {
+      headers: {},
+      user: { id: USER_UUID, type: 'student' },
+      socket: { remoteAddress: '10.0.0.7' } as RlsRequest['socket'],
+    };
+
+    await lastValueFrom(
+      interceptor.intercept(buildContext(req), buildHandler('ok')),
+    );
+
+    const ipCall = queryRunner.query.mock.calls.find(
+      ([sql]) => typeof sql === 'string' && sql.includes('current_ip'),
+    );
+    expect(ipCall![1]).toEqual(['10.0.0.7']);
   });
 
   it('commits the transaction on successful handler', async () => {

@@ -11,6 +11,7 @@ const mockRedis = {
   setJson: jest.fn(),
   setJsonKeepTtl: jest.fn(),
   getJson: jest.fn(),
+  getDelJson: jest.fn(),
   pttl: jest.fn(),
   del: jest.fn(),
 };
@@ -112,22 +113,24 @@ describe('TestSessionService', () => {
     );
   });
 
-  it('consumeGrace — returns snapshot and deletes key', async () => {
+  it('consumeGrace — atomically GETDELs the grace key and returns the snapshot', async () => {
     const answers = { 'q-2': 'opt-c' };
-    mockRedis.getJson.mockResolvedValue({ snapshot: answers });
-    mockRedis.del.mockResolvedValue(1);
+    mockRedis.getDelJson.mockResolvedValue({ snapshot: answers });
     const result = await service.consumeGrace(baseData.sessionId);
     expect(result).toEqual(answers);
-    expect(mockRedis.del).toHaveBeenCalledWith(
+    expect(mockRedis.getDelJson).toHaveBeenCalledWith(
       `${EXAM_GRACE_PREFIX}${baseData.sessionId}`,
     );
+    // H2: no separate GET + DEL — two concurrent consumers must never both
+    // receive the snapshot.
+    expect(mockRedis.getJson).not.toHaveBeenCalled();
+    expect(mockRedis.del).not.toHaveBeenCalled();
   });
 
   it('consumeGrace — returns null when grace window has expired', async () => {
-    mockRedis.getJson.mockResolvedValue(null);
+    mockRedis.getDelJson.mockResolvedValue(null);
     const result = await service.consumeGrace(baseData.sessionId);
     expect(result).toBeNull();
-    expect(mockRedis.del).not.toHaveBeenCalled();
   });
 
   it('hasGrace — returns true when pttl > 0', async () => {
