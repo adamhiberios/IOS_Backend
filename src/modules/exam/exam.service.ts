@@ -2,6 +2,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   UnprocessableEntityException,
@@ -11,7 +12,7 @@ import { Repository, IsNull, In, DataSource } from 'typeorm';
 import * as crypto from 'crypto';
 import * as bcrypt from 'bcrypt';
 
-import { Exam, ExamQuestion } from '../../database/entities/exam.entity';
+import { Exam, ExamQuestion, ExamStatus } from '../../database/entities/exam.entity';
 import { ExamAccessCode } from '../../database/entities/exam-access-code.entity';
 import { ExamAttempt, AttemptStatus } from '../../database/entities/exam-attempt.entity';
 import { TestSession, TestSessionStatus } from '../../database/entities/test-session.entity';
@@ -78,26 +79,74 @@ export class ExamService {
     userId: string,
     examId: string,
     certId: string,
-  ): Promise<{ plainCode: string; expiresAt: Date }> {
+  ): Promise<{ plainCode: string; expiresAt: Date; examId: string }> {
     const exam = await this.examRepo.findOne({ where: { id: examId } });
     if (!exam) throw new NotFoundException('Exam not found');
+    if (exam.certId !== certId) {
+      throw new BadRequestException(
+        'Exam does not belong to the given certificate',
+      );
+    }
+    // M9 (audit 2026-06-11): draft exams must never be assignable.
+    if (exam.status !== ExamStatus.PUBLISHED) {
+      throw new UnprocessableEntityException('Exam is not published');
+    }
 
-    const plainCode = crypto.randomBytes(32).toString('hex');
-    const tokenHash = await bcrypt.hash(plainCode, ACCESS_CODE_BCRYPT_COST);
-    const expiresAt = new Date(Date.now() + ACCESS_CODE_TTL_MS);
+    return this.issueAccessCode(userId, exam);
+  }
 
-    await this.accessCodeRepo.save(
-      this.accessCodeRepo.create({
-        userId,
-        examId,
-        certId,
-        tokenHash,
-        expiresAt,
-      }),
-    );
+  /**
+   * SoT §2.3 assignment algorithm (G1, audit 2026-06-11): pick the student's
+   * next exam for a certificate automatically — published exams ordered by
+   * exam_order ASC, excluding any the student has already attempted. 403 when
+   * the pool is exhausted. This is also the primitive Week 5's retake
+   * checkout (BE-021C) builds on.
+   */
+  async assignNextExam(
+    userId: string,
+    certId: string,
+  ): Promise<{
+    plainCode: string;
+    expiresAt: Date;
+    examId: string;
+    examOrder: number;
+    examTitle: string;
+  }> {
+    const pool = await this.examRepo.find({
+      where: { certId, status: ExamStatus.PUBLISHED },
+      order: { examOrder: 'ASC' },
+    });
+    if (pool.length === 0) {
+      throw new NotFoundException(
+        'No published exams exist for this certificate',
+      );
+    }
 
-    this.logger.log(`Access code assigned: examId=${examId} userId=${userId}`);
-    return { plainCode, expiresAt };
+    const attempted = await this.getAttemptedExamIds(userId, certId);
+    const next = pool.find((exam) => !attempted.has(exam.id));
+    if (!next) {
+      throw new ForbiddenException(
+        'Exam pool exhausted: the student has attempted every published exam for this certificate',
+      );
+    }
+
+    // One outstanding code per exam per student — re-issuing would orphan the
+    // first code and confuse the audit trail.
+    const outstanding = await this.accessCodeRepo.findOne({
+      where: { userId, examId: next.id, usedAt: IsNull() },
+    });
+    if (outstanding && outstanding.expiresAt > new Date()) {
+      throw new ConflictException(
+        'Student already has an unused access code for their next exam',
+      );
+    }
+
+    const issued = await this.issueAccessCode(userId, next);
+    return {
+      ...issued,
+      examOrder: next.examOrder,
+      examTitle: next.title,
+    };
   }
 
   // ── Student: validate access code ────────────────────────────────────────
@@ -151,45 +200,69 @@ export class ExamService {
       );
     }
 
-    // Atomically mark the access code as used (first-write-wins).
-    const consumed = await this.accessCodeRepo.update(
-      { id: accessCode.id, usedAt: IsNull() },
-      { usedAt: new Date() },
-    );
-    if (consumed.affected === 0) {
-      throw new ConflictException('Access code has already been used');
-    }
-
     const durationSeconds = exam.durationMinutes * 60;
     const startedAt = new Date();
     const expiresAt = new Date(startedAt.getTime() + durationSeconds * 1000);
 
-    // Persist the TestSession row — this is the authoritative DB record.
-    const session = await this.testSessionRepo.save(
-      this.testSessionRepo.create({
-        userId,
-        examId,
-        certId: accessCode.certId,   // carry certId from the access code
-        sessionToken: accessCode.id, // link back to the access code
-        startedAt,
-        durationSeconds,
-        expiresAt,
-        status: TestSessionStatus.ACTIVE,
-        snapshot: null,
-      }),
-    );
+    // M3 (audit 2026-06-11): code consumption and session creation are one
+    // transaction — a failure between the two can no longer burn the one-time
+    // code without producing a session.
+    const session = await this.dataSource.transaction(async (em) => {
+      // Atomically mark the access code as used (first-write-wins).
+      const consumed = await em.update(
+        ExamAccessCode,
+        { id: accessCode.id, usedAt: IsNull() },
+        { usedAt: new Date() },
+      );
+      if (consumed.affected === 0) {
+        throw new ConflictException('Access code has already been used');
+      }
+
+      // Persist the TestSession row — this is the authoritative DB record.
+      return em.save(
+        em.create(TestSession, {
+          userId,
+          examId,
+          certId: accessCode.certId,   // carry certId from the access code
+          sessionToken: accessCode.id, // link back to the access code
+          startedAt,
+          durationSeconds,
+          expiresAt,
+          status: TestSessionStatus.ACTIVE,
+          snapshot: null,
+        }),
+      );
+    });
 
     // Create the Redis session key — this is the authoritative countdown.
-    await this.testSessionSvc.start(
-      {
-        sessionId: session.id,
-        userId,
-        examId,
-        certId: accessCode.certId,
-        startedAt: startedAt.toISOString(),
-      },
-      durationSeconds,
-    );
+    // If this fails, compensate: remove the dangling session row (it never
+    // logically existed — no Redis key means no countdown and no expiry
+    // event would ever clear it) and free the code so the student can retry.
+    try {
+      await this.testSessionSvc.start(
+        {
+          sessionId: session.id,
+          userId,
+          examId,
+          certId: accessCode.certId,
+          startedAt: startedAt.toISOString(),
+        },
+        durationSeconds,
+      );
+    } catch (err) {
+      await this.dataSource.transaction(async (em) => {
+        await em.delete(TestSession, { id: session.id });
+        await em.update(
+          ExamAccessCode,
+          { id: accessCode.id },
+          { usedAt: null },
+        );
+      });
+      this.logger.error(
+        `startExam compensation: Redis start failed for session ${session.id}; code ${accessCode.id} restored`,
+      );
+      throw err;
+    }
 
     // Load questions (without revealing which option is correct).
     const examWithQuestions = await this.examRepo.findOne({
@@ -375,17 +448,30 @@ export class ExamService {
       return { score: 0, passed: false, correctCount: 0, totalCount: 0 };
     }
 
+    // M9 (audit 2026-06-11): score is weighted by exam_questions.marks
+    // (default 1, so unweighted exams behave exactly as before).
+    // correctCount/totalCount remain plain question counts for the response.
     let correctCount = 0;
+    let earnedMarks = 0;
+    let totalMarks = 0;
 
     for (const question of exam.questions) {
+      const weight = question.marks ?? 1;
+      totalMarks += weight;
       const selectedOptionId = answers[question.id];
       if (!selectedOptionId) continue;
       const selected = question.options.find((o) => o.id === selectedOptionId);
-      if (selected?.isCorrect) correctCount++;
+      if (selected?.isCorrect) {
+        correctCount++;
+        earnedMarks += weight;
+      }
     }
 
     const totalCount = exam.questions.length;
-    const score = parseFloat(((correctCount / totalCount) * 100).toFixed(2));
+    const score =
+      totalMarks > 0
+        ? parseFloat(((earnedMarks / totalMarks) * 100).toFixed(2))
+        : 0;
     const passingThreshold = exam.passingScore ?? PASSING_SCORE;
     const passed = score >= passingThreshold;
 
@@ -393,6 +479,68 @@ export class ExamService {
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
+
+  /** Generate + persist a one-time access code for a published exam. */
+  private async issueAccessCode(
+    userId: string,
+    exam: Exam,
+  ): Promise<{ plainCode: string; expiresAt: Date; examId: string }> {
+    const plainCode = crypto.randomBytes(32).toString('hex');
+    const tokenHash = await bcrypt.hash(plainCode, ACCESS_CODE_BCRYPT_COST);
+    const expiresAt = new Date(Date.now() + ACCESS_CODE_TTL_MS);
+
+    await this.accessCodeRepo.save(
+      this.accessCodeRepo.create({
+        userId,
+        examId: exam.id,
+        certId: exam.certId,
+        tokenHash,
+        expiresAt,
+      }),
+    );
+
+    this.logger.log(`Access code assigned: examId=${exam.id} userId=${userId}`);
+    return { plainCode, expiresAt, examId: exam.id };
+  }
+
+  /**
+   * Exam IDs the student has already attempted for a certificate.
+   *
+   * exam_attempts has FORCE RLS keyed on app.current_user_id — querying it on
+   * the default pool (where the GUC is unset, or set to the calling ADMIN's
+   * id) silently returns zero rows under a non-BYPASSRLS role, which would
+   * make the algorithm re-assign already-attempted exams in production. Same
+   * trap as C2: run in a dedicated transaction with the STUDENT's id set.
+   */
+  private async getAttemptedExamIds(
+    userId: string,
+    certId: string,
+  ): Promise<Set<string>> {
+    const runner = this.dataSource.createQueryRunner();
+    await runner.connect();
+    await runner.startTransaction();
+    try {
+      await runner.query(
+        `SELECT set_config('app.current_user_id', $1, true)`,
+        [String(userId)],
+      );
+      const rows: Array<{ exam_id: string }> = await runner.query(
+        `SELECT DISTINCT exam_id FROM exam_attempts WHERE user_id = $1 AND cert_id = $2`,
+        [userId, certId],
+      );
+      await runner.commitTransaction();
+      return new Set(rows.map((r) => r.exam_id));
+    } catch (err) {
+      if (runner.isTransactionActive) {
+        await runner.rollbackTransaction();
+      }
+      throw err;
+    } finally {
+      if (!runner.isReleased) {
+        await runner.release();
+      }
+    }
+  }
 
   private async scoreAndPersist(
     session: TestSession,
@@ -535,6 +683,13 @@ export class ExamService {
   ): Promise<{ code: ExamAccessCode; exam: Exam }> {
     const exam = await this.examRepo.findOne({ where: { id: examId } });
     if (!exam) throw new NotFoundException('Exam not found');
+
+    // M9 (audit 2026-06-11): a draft (or unpublished-again) exam is not
+    // sittable even with a previously-issued code. Same generic error as an
+    // invalid code — no state enumeration.
+    if (exam.status !== ExamStatus.PUBLISHED) {
+      throw new ForbiddenException('Invalid or expired access code');
+    }
 
     const candidates = await this.accessCodeRepo.find({
       where: { userId, examId, usedAt: IsNull() },

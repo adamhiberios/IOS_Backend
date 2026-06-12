@@ -21,6 +21,8 @@
     "migration:run": "typeorm-ts-node-commonjs migration:run -d src/database/config/typeorm.config.ts",
     "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/database/config/typeorm.config.ts",
     "migration:show": "typeorm-ts-node-commonjs migration:show -d src/database/config/typeorm.config.ts",
+    "seed:demo": "ts-node -r tsconfig-paths/register src/database/seeds/demo-seed.ts",
+    "docker:seed:demo": "docker compose exec api npm run seed:demo",
     "docker:up": "docker compose up",
     "docker:up:d": "docker compose up -d",
     "docker:down": "docker compose down",

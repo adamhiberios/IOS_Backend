@@ -1,10 +1,18 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
-import { NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
+import {
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+  ConflictException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { ExamService } from './exam.service';
 import { TestSessionService } from './test-session.service';
-import { Exam } from '../../database/entities/exam.entity';
+import { Exam, ExamStatus } from '../../database/entities/exam.entity';
+import { ExamAccessCode } from '../../database/entities/exam-access-code.entity';
+import { TestSession as TestSessionEntity } from '../../database/entities/test-session.entity';
 import { ExamAccessCode } from '../../database/entities/exam-access-code.entity';
 import { ExamAttempt, AttemptStatus } from '../../database/entities/exam-attempt.entity';
 import { TestSession, TestSessionStatus } from '../../database/entities/test-session.entity';
@@ -15,6 +23,7 @@ const bcryptMock = bcrypt as jest.Mocked<typeof bcrypt>;
 
 const mockExamRepo = {
   findOne: jest.fn(),
+  find: jest.fn(),
   create: jest.fn(),
   save: jest.fn(),
 };
@@ -51,8 +60,19 @@ const mockQueryRunner = {
   isTransactionActive: true,
   isReleased: false,
 };
+// M3/G1 — entity manager used by dataSource.transaction(cb).
+const mockEntityManager = {
+  create: jest.fn(),
+  save: jest.fn(),
+  update: jest.fn(),
+  delete: jest.fn(),
+};
 const mockDataSource = {
   createQueryRunner: jest.fn(() => mockQueryRunner),
+  transaction: jest.fn(
+    async (cb: (em: typeof mockEntityManager) => unknown) =>
+      cb(mockEntityManager),
+  ),
 };
 const mockTestSessionSvc = {
   start: jest.fn(),
@@ -68,6 +88,8 @@ const mockExam: Partial<Exam> = {
   id: 'exam-1',
   certId: 'cert-1',
   title: 'PSM I Exam',
+  status: ExamStatus.PUBLISHED,
+  examOrder: 1,
   durationMinutes: 60,
   passingScore: 80,
   questions: [
@@ -131,7 +153,130 @@ describe('ExamService', () => {
     expect(mockAccessCodeRepo.save).toHaveBeenCalled();
   });
 
+  it('assignExam — rejects a DRAFT exam with 422 (M9)', async () => {
+    mockExamRepo.findOne.mockResolvedValue({
+      ...mockExam,
+      status: ExamStatus.DRAFT,
+    });
+    await expect(
+      service.assignExam('u', 'exam-1', 'cert-1'),
+    ).rejects.toThrow(UnprocessableEntityException);
+    expect(mockAccessCodeRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('assignExam — rejects an exam that belongs to a different certificate with 400', async () => {
+    mockExamRepo.findOne.mockResolvedValue({ ...mockExam, certId: 'cert-OTHER' });
+    await expect(
+      service.assignExam('u', 'exam-1', 'cert-1'),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  // ── assignNextExam (G1 — SoT §2.3 algorithm) ───────────────────────────────
+
+  describe('assignNextExam', () => {
+    const pool = [
+      { ...mockExam, id: 'exam-1', examOrder: 1, title: 'PSM I' },
+      { ...mockExam, id: 'exam-2', examOrder: 2, title: 'PSM I — Retake A' },
+      { ...mockExam, id: 'exam-3', examOrder: 3, title: 'PSM I — Retake B' },
+    ];
+
+    const mockAttempted = (examIds: string[]) => {
+      mockQueryRunner.query.mockImplementation(async (sql: string) =>
+        sql.includes('SELECT DISTINCT')
+          ? examIds.map((id) => ({ exam_id: id }))
+          : undefined,
+      );
+    };
+
+    beforeEach(() => {
+      mockExamRepo.find.mockResolvedValue(pool);
+      mockAccessCodeRepo.findOne.mockResolvedValue(null);
+      mockAccessCodeRepo.create.mockImplementation((d) => d);
+      mockAccessCodeRepo.save.mockResolvedValue({});
+      (bcryptMock.hash as jest.Mock).mockResolvedValue('hashed');
+    });
+
+    it('queries only PUBLISHED exams ordered by exam_order ASC', async () => {
+      mockAttempted([]);
+      await service.assignNextExam('user-1', 'cert-1');
+      expect(mockExamRepo.find).toHaveBeenCalledWith({
+        where: { certId: 'cert-1', status: ExamStatus.PUBLISHED },
+        order: { examOrder: 'ASC' },
+      });
+    });
+
+    it('assigns the lowest unattempted exam_order', async () => {
+      mockAttempted(['exam-1']); // first already attempted
+      const result = await service.assignNextExam('user-1', 'cert-1');
+      expect(result.examId).toBe('exam-2');
+      expect(result.examOrder).toBe(2);
+      expect(result.plainCode).toHaveLength(64);
+    });
+
+    it('runs the attempts lookup inside an RLS-scoped transaction keyed on the STUDENT', async () => {
+      mockAttempted([]);
+      await service.assignNextExam('user-1', 'cert-1');
+      expect(mockQueryRunner.query).toHaveBeenCalledWith(
+        expect.stringContaining(`set_config('app.current_user_id', $1, true)`),
+        ['user-1'],
+      );
+      expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
+      expect(mockQueryRunner.release).toHaveBeenCalled();
+    });
+
+    it('throws 403 when the pool is exhausted', async () => {
+      mockAttempted(['exam-1', 'exam-2', 'exam-3']);
+      await expect(
+        service.assignNextExam('user-1', 'cert-1'),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockAccessCodeRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('throws 404 when the certificate has no published exams', async () => {
+      mockExamRepo.find.mockResolvedValue([]);
+      await expect(
+        service.assignNextExam('user-1', 'cert-1'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws 409 when an unused, unexpired code already exists for the next exam', async () => {
+      mockAttempted([]);
+      mockAccessCodeRepo.findOne.mockResolvedValue({
+        id: 'code-old',
+        expiresAt: new Date(Date.now() + 3_600_000),
+      });
+      await expect(
+        service.assignNextExam('user-1', 'cert-1'),
+      ).rejects.toThrow(ConflictException);
+      expect(mockAccessCodeRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('ignores an EXPIRED outstanding code and issues a new one', async () => {
+      mockAttempted([]);
+      mockAccessCodeRepo.findOne.mockResolvedValue({
+        id: 'code-old',
+        expiresAt: new Date(Date.now() - 1000),
+      });
+      const result = await service.assignNextExam('user-1', 'cert-1');
+      expect(result.examId).toBe('exam-1');
+      expect(mockAccessCodeRepo.save).toHaveBeenCalled();
+    });
+  });
+
   // ── validateAccess ─────────────────────────────────────────────────────────
+
+  it('validateAccess — rejects a DRAFT exam with the generic 403 (M9, no state enumeration)', async () => {
+    mockExamRepo.findOne.mockResolvedValue({
+      ...mockExam,
+      status: ExamStatus.DRAFT,
+    });
+    await expect(
+      service.validateAccess('u', 'any-code', 'exam-1'),
+    ).rejects.toThrow('Invalid or expired access code');
+    // Must not even consult the codes table.
+    expect(mockAccessCodeRepo.find).not.toHaveBeenCalled();
+  });
+
 
   it('validateAccess — throws ForbiddenException when no valid code exists', async () => {
     mockExamRepo.findOne.mockResolvedValue(mockExam);
@@ -369,6 +514,96 @@ describe('ExamService', () => {
         service.lateSubmitExam('sess-1', 'user-1', {}),
       ).rejects.toThrow(ForbiddenException);
       expect(mockRunnerManager.save).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── Weighted scoring (M9) ───────────────────────────────────────────────────
+
+  it('scoreAnswers — weights the score by question marks', async () => {
+    mockExamRepo.findOne.mockResolvedValue({
+      ...mockExam,
+      passingScore: 80,
+      questions: [
+        { id: 'q-1', marks: 3, options: [{ id: 'opt-a', isCorrect: true }] },
+        { id: 'q-2', marks: 1, options: [{ id: 'opt-b', isCorrect: true }] },
+      ],
+    });
+    // q-1 (3 marks) correct, q-2 (1 mark) wrong → 3/4 = 75%
+    const result = await service.scoreAnswers('exam-1', {
+      'q-1': 'opt-a',
+      'q-2': 'opt-WRONG',
+    });
+    expect(result.score).toBe(75);
+    expect(result.passed).toBe(false);
+    expect(result.correctCount).toBe(1); // counts stay plain question counts
+    expect(result.totalCount).toBe(2);
+  });
+
+  // ── startExam compensation (M3) ────────────────────────────────────────────
+
+  describe('startExam — compensation when Redis start fails', () => {
+    beforeEach(() => {
+      mockExamRepo.findOne.mockResolvedValue({ ...mockExam, questions: [] });
+      const candidate = {
+        id: 'code-1',
+        tokenHash: 'hash',
+        expiresAt: new Date(Date.now() + 3_600_000),
+        certId: 'cert-1',
+      };
+      mockAccessCodeRepo.find.mockResolvedValue([candidate]);
+      (bcryptMock.compare as jest.Mock).mockResolvedValue(true);
+      mockTestSessionRepo.findOne.mockResolvedValue(null); // no active session
+
+      mockEntityManager.update.mockResolvedValue({ affected: 1 });
+      mockEntityManager.create.mockImplementation((_cls, d) => d);
+      mockEntityManager.save.mockImplementation(async (e) => ({
+        ...e,
+        id: 'sess-9',
+      }));
+    });
+
+    it('frees the access code and deletes the dangling session row, then rethrows', async () => {
+      mockTestSessionSvc.start.mockRejectedValueOnce(new Error('redis down'));
+
+      await expect(
+        service.startExam('user-1', 'plain', 'exam-1'),
+      ).rejects.toThrow('redis down');
+
+      // Compensation: session row removed…
+      expect(mockEntityManager.delete).toHaveBeenCalledWith(
+        TestSessionEntity,
+        { id: 'sess-9' },
+      );
+      // …and the one-time code restored to unused.
+      expect(mockEntityManager.update).toHaveBeenCalledWith(
+        ExamAccessCode,
+        { id: 'code-1' },
+        { usedAt: null },
+      );
+    });
+
+    it('happy path: consumes the code and creates the session in one transaction', async () => {
+      mockTestSessionSvc.start.mockResolvedValue(undefined);
+
+      const result = await service.startExam('user-1', 'plain', 'exam-1');
+
+      expect(result.sessionId).toBe('sess-9');
+      expect(mockDataSource.transaction).toHaveBeenCalledTimes(1);
+      expect(mockEntityManager.update).toHaveBeenCalledWith(
+        ExamAccessCode,
+        { id: 'code-1', usedAt: expect.anything() },
+        { usedAt: expect.any(Date) },
+      );
+      expect(mockEntityManager.delete).not.toHaveBeenCalled();
+    });
+
+    it('first-write-wins: a consumed code aborts the transaction with 409', async () => {
+      mockEntityManager.update.mockResolvedValueOnce({ affected: 0 });
+
+      await expect(
+        service.startExam('user-1', 'plain', 'exam-1'),
+      ).rejects.toThrow(ConflictException);
+      expect(mockEntityManager.save).not.toHaveBeenCalled();
     });
   });
 });

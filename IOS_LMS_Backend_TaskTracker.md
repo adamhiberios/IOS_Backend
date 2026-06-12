@@ -3,7 +3,16 @@
 **Repo:** https://github.com/adamhiberios/IOS_Backend  
 **Stack:** NestJS · PostgreSQL 15 · TypeORM · Redis · Angular Universal  
 **Total weeks:** 10 | **Total tasks:** 46  
-**Last updated:** 2026-06-08 · Weeks 1, 2, 3, 4 complete · deployment/CI-CD infra pulled forward from Week 10 (partial) · Week 5 (Payment + Enrollment) is next
+**Last updated:** 2026-06-11 · Weeks 1, 2, 3, 4 complete · deployment/CI-CD infra pulled forward from Week 10 (partial) · Week 5 (Payment + Enrollment) is next
+
+**2026-06-11 audit + remediation pass** (full report: `docs/AUDIT_2026-06-11.md`):
+- Fixed CRITICAL: C1 (`@Public()` on WebController — email verify/reset links were 401ing), C2 (`exam_attempts` FORCE RLS vs default-pool insert — `scoreAndPersist` now runs in its own RLS-scoped transaction).
+- Fixed HIGH: H1 atomic `SET KEEPTTL XX`, H2 `GETDEL` grace consume, H3 ownership-before-grace in late-submit, H4 conditional submit transition (no duplicate attempts), H5 refresh-rotation `affected` check, H6 `?active=false` coercion, H7 RolesGuard exact-match (finance≠content). Plus M3 (startExam compensation), M9 (PUBLISHED guard + marks-weighted scoring), M10 (auth throttle on web reset form).
+- **Exam assignment algorithm (SoT §2.3) now actually implemented** — was claimed ✅ in Week 4 but absent. `POST /admin/exam/assign` without `examId` auto-assigns the lowest unattempted `exam_order` among PUBLISHED exams; 403 on pool exhaustion; 409 on outstanding unused code; attempts lookup is RLS-scoped to the student. Ready for Week 5 BE-021C.
+- Repaired 4 stale unit tests (rls.interceptor x-forwarded-for, storage `delete .mock`, exception-filter `|{}` + dynamic import). Integration suite green 70/70.
+- Email templates: rebranded all 11 to Poppins + HTML logo lockup on `#85102C` (logo maroon), README tokens updated.
+- BE-038 note: `docker/nginx/nginx.conf` was superseded by Caddy (`scripts/caddy/Caddyfile`) in the deployment pass.
+- Still open from audit: M1–M2, M4–M8, LOW items, Redis auth + eviction policy + PG CA (fold into GAP-003).
 
 ---
 
@@ -197,6 +206,14 @@ Infra plumbing pulled ahead so Weeks 1–4 could be exercised on a live environm
 | Swagger gating | `ENABLE_SWAGGER` env flag (`src/config/validation.ts`) opts `/api/docs` in per environment; `main.ts` wires it and relaxes CSP only when Swagger is enabled so the UI renders over HTTP. |
 | Docs | `docs/DEPLOYMENT.md` (full deploy runbook) · `SECURITY_REVIEW.md` (security review writeup). |
 | Cleanup | Removed obsolete `docker-compose.prod.yml` and the standalone Nginx config in favour of the droplet compose flow. |
+
+---
+
+## Demo data ✅ (added 2026-06-11)
+
+**Script:** `src/database/seeds/demo-seed.ts` · **Docs:** `docs/DEMO_DATA.md` · **Run:** `npm run docker:seed:demo` (or `npm run seed:demo` locally)
+
+Deterministic-UUID demo slice (`dd……-0000-4000-a000-*`): 4 role admins, 6 certificates with en/tr/ar translations + modules/lessons, weighted exams (incl. one DRAFT for the M9 guard), 8 students at distinct lifecycle stages (passed+certified, failed+retake-code outstanding, mid-course, promo purchase, multi-cert, browse-only, unverified, deactivated), purchases/transactions/progress/attempts/issued certs via the RLS-aware seed pattern, 3 promo codes ready for Week 5. Re-run = wipe demo slice + re-insert; manual data untouched; refuses on NODE_ENV=production. All accounts: `Demo@123!`.
 
 ---
 

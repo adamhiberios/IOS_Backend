@@ -1,5 +1,5 @@
-import { IsString, IsUUID, IsNotEmpty, IsObject } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsString, IsUUID, IsNotEmpty, IsObject, IsOptional } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 // ── Student DTOs ─────────────────────────────────────────────────────────────
 
@@ -54,7 +54,11 @@ export class AssignExamDto {
   @IsUUID()
   certId: string;
 
-  @ApiProperty({ description: 'Exam UUID to assign' })
+  @ApiPropertyOptional({
+    description:
+      'Exam UUID to assign explicitly. Omit to auto-assign the next exam per the SoT §2.3 algorithm: lowest unattempted exam_order among PUBLISHED exams for the certificate (403 when the pool is exhausted).',
+  })
+  @IsOptional()
   @IsUUID()
-  examId: string;
+  examId?: string;
 }

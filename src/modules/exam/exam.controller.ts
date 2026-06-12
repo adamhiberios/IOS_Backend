@@ -162,17 +162,17 @@ export class ExamAdminController {
 
   @Post('assign')
   @Roles(AdminRole.LEARNING_ADMIN)
-  @ApiOperation({ summary: 'Assign an exam to a student and issue a one-time access code' })
+  @ApiOperation({
+    summary:
+      'Assign an exam to a student and issue a one-time access code. Omit examId to auto-assign the next unattempted exam (SoT §2.3).',
+  })
   @ApiCreatedResponse({ description: 'Access code created; returns plain code (show once)' })
   async assignExam(@Body() dto: AssignExamDto) {
-    const { plainCode, expiresAt } = await this.examService.assignExam(
-      dto.userId,
-      dto.examId,
-      dto.certId,
-    );
+    const result = dto.examId
+      ? await this.examService.assignExam(dto.userId, dto.examId, dto.certId)
+      : await this.examService.assignNextExam(dto.userId, dto.certId);
     return {
-      plainCode,
-      expiresAt,
+      ...result,
       message: 'Store or send this code to the student. It is shown only once.',
     };
   }
