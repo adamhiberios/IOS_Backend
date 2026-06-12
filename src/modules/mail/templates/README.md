@@ -8,8 +8,8 @@ Pulled from the IOS LMS style guide:
 
 | Token | Value | Use |
 |-------|-------|-----|
-| Brand red | `#7A1A1A` | Header background, primary buttons, accent rules |
-| Brand red (hover) | `#5C1314` | Button hover (where supported) |
+| Brand maroon | `#85102C` | Header background, primary buttons, accent rules (matched to the official logo, rebrand 2026-06-11) |
+| Logo yellow | `#F0C419` | The horizontal rule in the logo lockup |
 | Dark | `#1F1F1F` | Footer background, body text |
 | Muted | `#6B7280` | Secondary text, meta info |
 | Background | `#F5F5F4` | Outer email canvas |
@@ -19,11 +19,11 @@ Pulled from the IOS LMS style guide:
 | Success | `#3F7D3F` | Success status indicators |
 | Danger | `#B33A3A` | Failure / alert indicators |
 
-**Typography** (web-safe so it renders across Gmail / Outlook / Apple Mail):
+**Typography** (rebrand 2026-06-11 — Poppins everywhere, graceful fallback):
 
-- Display / headings: `Georgia, 'Times New Roman', serif` — matches the serif feel of the style guide
-- Body / UI: `-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif`
-- Logo wordmark: rendered in inline HTML (no image) so it survives image-blocking in Outlook / corporate clients
+- All text: `'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif`
+- Poppins is loaded via a Google Fonts `@import` in each template's `<style>` block. Clients that support web fonts (Apple Mail, iOS Mail, some others) render Poppins; Gmail/Outlook fall back to the system stack. This is the standard, accepted email pattern — web fonts cannot be forced in Gmail/Outlook.
+- Logo lockup: recreated in inline HTML on the `#85102C` header block — `INSTITUTE / OF ——— / SCRUM ™` with the `#F0C419` yellow rule as an inline-block span. Deliberately NOT an image so it survives image-blocking in Outlook / corporate clients. (Outlook's Word engine drops the inline-block span, degrading gracefully to the plain wordmark.)
 
 ## Layout
 
